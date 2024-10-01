@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
                     "Mesh file to use.");
     args.AddOption(&problem, "-p", "--problem",
                     "Problem setup to use. See options in velocity_function().");
-    args.AddOption(&ser_ref_levels, "-rs", "--refine-serial",
+    args.AddOption(&ser_ref_levels, "-r", "--refine-serial",
                     "Number of times to refine the mesh uniformly in serial.");
     args.AddOption(&par_ref_levels, "-rp", "--refine-parallel",
                     "Number of times to refine the mesh uniformly in parallel.");
@@ -197,8 +197,21 @@ int main(int argc, char *argv[])
             sout << "parallel " << num_procs << " " << myid << "\n";
             sout.precision(precision);
             sout << "solution\n" << *pmesh << *u;
-            sout << "pause\n";
-            sout << flush;
+            sout << "window_title '" << "advection" << "'\n"
+              << "window_geometry "
+              << 0 << " " << 0 << " " << 1080 << " " << 1080
+              << "keys mcjl66666666666666666666666"
+              << "66666666666666666666666666666666666666666666666662222222222";
+              if(dim ==1)
+              {
+                sout << "RR";
+              }
+              else if(dim == 2)
+              {
+                sout << "R";
+              }
+              sout << endl;
+
             if (Mpi::Root())
             {
                 cout << "GLVis visualization paused."
@@ -211,10 +224,13 @@ int main(int argc, char *argv[])
     //*
     switch (scheme)
     {
-        case 0: met = new ClipAndScale(*pfes, lumpedmassmatrix, inflow, velocity, *m);
-            break;                                     
-        case 1: met = new LowOrderScheme(*pfes, lumpedmassmatrix, inflow, velocity, *m);
+        case 0: met = new LowOrderScheme(*pfes, lumpedmassmatrix, inflow, velocity, *m);
             break;
+        case 1: met = new ClipAndScale(*pfes, lumpedmassmatrix, inflow, velocity, *m);
+            break;  
+        default:
+            MFEM_ABORT("Unkown scheme!");
+
     }
     //*/
 
@@ -261,10 +277,12 @@ int main(int argc, char *argv[])
     delete met;
     delete m;
     delete mL;
+    
+    return 0;
 }
 
 
-
+//*
 // Velocity coefficient
 void velocity_function(const Vector &x, Vector &v)
 {
@@ -348,6 +366,7 @@ void velocity_function(const Vector &x, Vector &v)
    }
 }
 
+
 // Initial condition
 double u0_function(const Vector &x)
 {
@@ -381,7 +400,7 @@ double u0_function(const Vector &x)
                   ry *= s;
                }
                return ( std::erfc(w*(X(0)-cx-rx))*std::erfc(-w*(X(0)-cx+rx)) *
-                        std::erfc(w*(X(1)-cy-ry))*std::erfc(-w*(X(1)-cy+ry)) )/16;
+                        std::erfc(w*(X(1)-cy-ry))*std::erfc(-w*(X(1)-cy+ry)) )/16.0;
             }
          }
       }
