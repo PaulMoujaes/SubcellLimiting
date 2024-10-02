@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
         pmesh->UniformRefinement();
     }
 
-    /*
+    //*
     if(exec_mode == 0)
     {
         mesh_order = 1;
@@ -344,7 +344,7 @@ void velocity_function(const Vector &x, Vector &v)
    Vector X(dim);
    for (int i = 0; i < dim; i++)
    {
-      real_t center = (bb_min[i] + bb_max[i]) * 0.5;
+      double center = (bb_min[i] + bb_max[i]) * 0.5;
       X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
    }
 
@@ -373,7 +373,7 @@ void velocity_function(const Vector &x, Vector &v)
       case 3:
       {
          // Clockwise rotation in 2D around the origin
-         const real_t w = M_PI/2;
+         const double w = M_PI/2;
          switch (dim)
          {
             case 1: v(0) = 0;break;
@@ -388,8 +388,8 @@ void velocity_function(const Vector &x, Vector &v)
       case 4:
       {
          // Clockwise twisting rotation in 2D around the origin
-         const real_t w = M_PI/2;
-         real_t d = max((X(0)+1.)*(1.-X(0)),0.) * max((X(1)+1.)*(1.-X(1)),0.);
+         const double w = M_PI/2;
+         double d = max((X(0)+1.)*(1.-X(0)),0.) * max((X(1)+1.)*(1.-X(1)),0.);
          d = d*d;
          switch (dim)
          {
@@ -411,7 +411,7 @@ double u0_function(const Vector &x)
     Vector X(dim);
     for (int i = 0; i < dim; i++)
     {
-        real_t center = (bb_min[i] + bb_max[i]) * 0.5;
+        double center = (bb_min[i] + bb_max[i]) * 0.5;
         X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
     }
 
@@ -516,10 +516,10 @@ double u0_function(const Vector &x)
                 case 2:
                 case 3:
                 {
-                    real_t rx = 0.45, ry = 0.25, cx = 0., cy = -0.2, w = 10.;
+                    double rx = 0.45, ry = 0.25, cx = 0., cy = -0.2, w = 10.;
                     if (dim == 3)
                     {
-                        const real_t s = (1. + 0.25*cos(2*M_PI*X(2)));
+                        const double s = (1. + 0.25*cos(2*M_PI*X(2)));
                         rx *= s;
                         ry *= s;
                     }
@@ -531,7 +531,7 @@ double u0_function(const Vector &x)
         }
         case 4:
         {
-            real_t x_ = X(0), y_ = X(1), rho, phi;
+            double x_ = X(0), y_ = X(1), rho, phi;
             rho = std::hypot(x_, y_);
             phi = atan2(y_, x_);
             return pow(sin(M_PI*rho),2)*sin(3*phi);
@@ -539,7 +539,7 @@ double u0_function(const Vector &x)
         }
         case 5:
         {
-            const real_t f = M_PI;
+            const double f = M_PI;
             return sin(f*X(0))*sin(f*X(1));
             break;
         }
