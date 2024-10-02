@@ -1,14 +1,20 @@
 #include "feevol.hpp"
 
 FE_Evolution::FE_Evolution(ParFiniteElementSpace &fes_,
-                                 const Vector &lumpedmassmatrix_, FunctionCoefficient &inflow,
-                                 VectorFunctionCoefficient &velocity, ParBilinearForm &M) :
-   TimeDependentOperator(lumpedmassmatrix_.Size()),
-   lumpedmassmatrix(lumpedmassmatrix_), fes(fes_),
+                                 FunctionCoefficient &inflow,
+                                 VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel) :
+   TimeDependentOperator(M.Height()),
+   lumpedM(&fes_), fes(fes_), x_now(*fes_.GetMesh()->GetNodes()), 
    gcomm(fes_.GroupComm()), I(M.SpMat().GetI()), J(M.SpMat().GetJ()),
-   b_lumped(&fes), //u_inflow(&fes), 
-   conv_int(velocity), mass_int()
+   x0(x0_), v_gf(mesh_vel), v_mesh_coeff(&mesh_vel),
+   //b_lumped(&fes), //u_inflow(&fes), 
+   conv_int(v_mesh_coeff), mass_int()
 {
+    lumpedM.AddDomainIntegrator(new LumpedIntegrator(new MassIntegrator()));
+    lumpedM.Assemble();
+    lumpedM.Finalize();
+
+    lumpedmassmatrix.SetSize(M.Height());
    //u_inflow.ProjectCoefficient(inflow);
 
    // distribute the lumped mass matrix entries

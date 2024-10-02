@@ -14,8 +14,8 @@ private:
 
 public:
    ClipAndScale(ParFiniteElementSpace &fes_,
-                const Vector &lumpedmassmatrix_, FunctionCoefficient &inflow,
-                VectorFunctionCoefficient &velocity, ParBilinearForm &M);
+                FunctionCoefficient &inflow,
+                VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel);
 
    virtual void Mult(const Vector &x, Vector &y) const override;
 

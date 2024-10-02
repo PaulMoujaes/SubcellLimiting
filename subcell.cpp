@@ -156,8 +156,8 @@ int main(int argc, char *argv[])
     // Store initial mesh positions.
     Vector x0 = x;
 
-    GridFunction v_gf(x.FESpace());
-    VectorGridFunctionCoefficient v_mesh_coeff(&v_gf);
+    ParGridFunction v_gf(x.ParFESpace());
+    //VectorGridFunctionCoefficient v_mesh_coeff(&v_gf);
     if (exec_mode == 1)
     {
         ParGridFunction v(&mesh_pfes);
@@ -175,10 +175,11 @@ int main(int argc, char *argv[])
         } 
 
         // Pseudotime velocity.
-        add(x, -1.0, x0, v_gf);
+        add(x0, -1.0, x, v_gf);
 
         // Return the mesh to the initial configuration.
         x = x0;
+        t_final = 1.0;
     }
     //*/
 
@@ -276,9 +277,9 @@ int main(int argc, char *argv[])
     //{
         switch (scheme)
         {
-            case 0: met = new LowOrderScheme(*pfes, lumpedmassmatrix, inflow, velocity, *m);
+            case 0: met = new LowOrderScheme(*pfes, inflow, velocity, *m, x0, v_gf);
                 break;
-            case 1: met = new ClipAndScale(*pfes, lumpedmassmatrix, inflow, velocity, *m);
+            case 1: met = new ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf);
                 break;  
             default:
                 MFEM_ABORT("Unkown scheme!");

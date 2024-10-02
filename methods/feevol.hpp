@@ -8,12 +8,16 @@ using namespace mfem;
 class FE_Evolution : public TimeDependentOperator 
 {
 protected:
-   const Vector &lumpedmassmatrix;
-   //DofInfo &dofs;
+   mutable Vector lumpedmassmatrix;
+   Vector &v_gf;
+   mutable ParBilinearForm lumpedM;
+   Vector &x_now;
+   const Vector &x0;
    ParFiniteElementSpace &fes;
    GroupCommunicator &gcomm;
    int *I, *J;
-   ParLinearForm b_lumped;
+   VectorGridFunctionCoefficient v_mesh_coeff;
+   //ParLinearForm b_lumped;
    //ParGridFunction u_inflow;
 
    mutable DenseMatrix Ke, Me;
@@ -26,9 +30,9 @@ protected:
 
 public:
    FE_Evolution(ParFiniteElementSpace &fes_,
-                   const Vector &lumpedmassmatrix_, FunctionCoefficient &inflow,
-                   VectorFunctionCoefficient &velocity,
-                   ParBilinearForm &M);
+                   FunctionCoefficient &inflow,
+                   VectorCoefficient &velocity,
+                   ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel);
 
    virtual void Mult(const Vector &x, Vector &y) const = 0;
 
