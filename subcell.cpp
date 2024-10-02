@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
         mesh_order = 1;
     }
 
-        
+    //mesh_order = 3;    
     pmesh->SetCurvature(mesh_order);
     H1_FECollection mesh_fec(mesh_order, dim, BasisType::GaussLobatto);
 
@@ -176,10 +176,22 @@ int main(int argc, char *argv[])
 
         // Pseudotime velocity.
         add(x0, -1.0, x, v_gf);
+        
+        Array<int> ess_bdr, ess_vdofs;
+        if (pmesh->bdr_attributes.Size() > 0)
+        {
+            ess_bdr.SetSize(pmesh->bdr_attributes.Max());
+        }
+        ess_bdr = 1;
+        mesh_pfes.GetEssentialVDofs(ess_bdr, ess_vdofs);
 
+        for (int i = 0; i < ess_vdofs.Size(); i++)
+        {
+            //if (ess_vdofs[i] == -1) { v_gf(i) = 0.0; }
+        }
         // Return the mesh to the initial configuration.
         x = x0;
-        t_final = 1.0;
+        //t_final = 1.0;
     }
     //*/
 
@@ -366,8 +378,31 @@ void velocity_function(const Vector &x, Vector &v)
       }
       case 2:
       {
-         v(0) = 2.0 * M_PI * (- X(1));
-         v(1) = 2.0 * M_PI * (X(0) ); 
+        v(0) =  sin(M_PI*X(0)) * cos(M_PI*X(1));
+         v(1) = -cos(M_PI*X(0)) * sin(M_PI*X(1));
+         //v(0) = 2.0 * M_PI * (- X(1));
+         //v(1) = 2.0 * M_PI * (X(0) ); 
+         // Gresho deformation used for mesh motion in remap tests.
+         const double r = sqrt(X(0)*X(0) + X(1)*X(1));
+         if (r < 0.2)
+         {
+            v(0) =  5.0 * X(1);
+            v(1) = -5.0 * X(0);
+         }
+         else if (r < 0.4)
+         {
+            v(0) =  2.0 * X(1) / r - 5.0 * X(1);
+            v(1) = -2.0 * X(0) / r + 5.0 * X(0);
+         }
+         else { v = 0.0; }
+
+
+         for (int d = 0; d < dim; d++) { X(d) = X(d) * 0.5 + 0.5; }
+
+         if (dim == 1) { MFEM_ABORT("Not implemented."); }
+         v(0) =  sin(M_PI*X(0)) * cos(M_PI*X(1));
+         v(1) = -cos(M_PI*X(0)) * sin(M_PI*X(1));
+
          break;
       }
 
