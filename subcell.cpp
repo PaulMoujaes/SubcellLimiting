@@ -18,7 +18,7 @@ double inflow_function(const Vector &x);
 // Function f = 1 for lumped boundary operator
 double one(const Vector &x) {return 1.0;}
 
-int problem;
+int problem, exec_mode;
 
 // Mesh bounding box
 Vector bb_min, bb_max;
@@ -33,6 +33,8 @@ int main(int argc, char *argv[])
 
     // 2. Parse command-line options.
     problem = 0;
+    exec_mode = 0;
+    int mesh_order = 3;
     const char *mesh_file = "../data/periodic-hexagon.mesh";
     int ser_ref_levels = 2;
     int par_ref_levels = 0;
@@ -52,6 +54,10 @@ int main(int argc, char *argv[])
                     "Mesh file to use.");
     args.AddOption(&problem, "-p", "--problem",
                     "Problem setup to use. See options in velocity_function().");
+    args.AddOption(&exec_mode, "-e", "--execute-mode",
+                    "0 for standard linear advection, 1 for remap mode with moving mesh.");
+    args.AddOption(&mesh_order, "-mo", "--mesh-order",
+                    "order of the mesh.");
     args.AddOption(&ser_ref_levels, "-r", "--refine-serial",
                     "Number of times to refine the mesh uniformly in serial.");
     args.AddOption(&par_ref_levels, "-rp", "--refine-parallel",
@@ -132,6 +138,50 @@ int main(int argc, char *argv[])
         pmesh->UniformRefinement();
     }
 
+    /*
+    if(exec_mode == 0)
+    {
+        mesh_order = 1;
+    }
+
+        
+    pmesh->SetCurvature(mesh_order);
+    H1_FECollection mesh_fec(mesh_order, dim, BasisType::GaussLobatto);
+
+    // Current mesh positions.
+    ParFiniteElementSpace mesh_pfes(pmesh, &mesh_fec, dim);
+    ParGridFunction x(&mesh_pfes);
+    pmesh->SetNodalGridFunction(&x);
+
+    // Store initial mesh positions.
+    Vector x0 = x;
+
+    GridFunction v_gf(x.FESpace());
+    VectorGridFunctionCoefficient v_mesh_coeff(&v_gf);
+    if (exec_mode == 1)
+    {
+        ParGridFunction v(&mesh_pfes);
+        VectorFunctionCoefficient v_coeff(dim, velocity_function);
+        v.ProjectCoefficient(v_coeff);
+
+        double t = 0.0;
+        while (t < t_final)
+        {
+            t += dt;
+            // Move the mesh nodes.
+            x.Add(min(dt, t_final-t), v);
+            // Update the node velocities.
+            v.ProjectCoefficient(v_coeff);
+        } 
+
+        // Pseudotime velocity.
+        add(x, -1.0, x0, v_gf);
+
+        // Return the mesh to the initial configuration.
+        x = x0;
+    }
+    //*/
+
     H1_FECollection fec(order, dim, BasisType::Positive);
     ParFiniteElementSpace* pfes = new ParFiniteElementSpace(pmesh, &fec);
 
@@ -141,8 +191,8 @@ int main(int argc, char *argv[])
         cout << "Number of unknowns: " << global_vSize << endl;
     }
 
-    VectorFunctionCoefficient velocity(dim, velocity_function);
     FunctionCoefficient inflow(inflow_function);
+    VectorFunctionCoefficient velocity(dim, velocity_function);
     FunctionCoefficient u0(u0_function);
 
     ParBilinearForm *mL = new ParBilinearForm(pfes);
@@ -206,7 +256,7 @@ int main(int argc, char *argv[])
               {
                 sout << "RR";
               }
-              else if(dim == 2)
+              else if(dim == 2 && problem != 2)
               {
                 sout << "R";
               }
@@ -222,16 +272,19 @@ int main(int argc, char *argv[])
 
     FE_Evolution *met = NULL;
     //*
-    switch (scheme)
-    {
-        case 0: met = new LowOrderScheme(*pfes, lumpedmassmatrix, inflow, velocity, *m);
-            break;
-        case 1: met = new ClipAndScale(*pfes, lumpedmassmatrix, inflow, velocity, *m);
-            break;  
-        default:
-            MFEM_ABORT("Unkown scheme!");
+    //if(exec_mode == 0)
+    //{
+        switch (scheme)
+        {
+            case 0: met = new LowOrderScheme(*pfes, lumpedmassmatrix, inflow, velocity, *m);
+                break;
+            case 1: met = new ClipAndScale(*pfes, lumpedmassmatrix, inflow, velocity, *m);
+                break;  
+            default:
+                MFEM_ABORT("Unkown scheme!");
 
-    }
+        }
+    //}
     //*/
 
     double t = 0.0;
@@ -277,12 +330,11 @@ int main(int argc, char *argv[])
     delete met;
     delete m;
     delete mL;
-    
+
     return 0;
 }
 
 
-//*
 // Velocity coefficient
 void velocity_function(const Vector &x, Vector &v)
 {
@@ -292,133 +344,347 @@ void velocity_function(const Vector &x, Vector &v)
    Vector X(dim);
    for (int i = 0; i < dim; i++)
    {
-      double center = (bb_min[i] + bb_max[i]) * 0.5;
+      real_t center = (bb_min[i] + bb_max[i]) * 0.5;
       X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
    }
 
    switch (problem)
    {
       case 0:
+      case 1:
       {
          // Translations in 1D, 2D, and 3D
          switch (dim)
          {
-            case 1:
-               v(0) = 1.0;
-               break;
-            case 2:
-               v(0) = sqrt(2./3.);
-               v(1) = sqrt(1./3.);
-               break;
-            case 3:
-               v(0) = sqrt(3./6.);
-               v(1) = sqrt(2./6.);
-               v(2) = sqrt(1./6.);
+            case 1: v(0) = 1.0; break;
+            case 2: v(0) = sqrt(2./3.); v(1) = sqrt(1./3.); break;
+            case 3: v(0) = sqrt(3./6.); v(1) = sqrt(2./6.); v(2) = sqrt(1./6.);
                break;
          }
          break;
       }
-      case 1:
       case 2:
       {
+         v(0) = 2.0 * M_PI * (- X(1));
+         v(1) = 2.0 * M_PI * (X(0) ); 
+         break;
+      }
+
+      case 3:
+      {
          // Clockwise rotation in 2D around the origin
-         const double w = M_PI/2;
+         const real_t w = M_PI/2;
          switch (dim)
          {
-            case 1:
-               v(0) = 1.0;
-               break;
-            case 2:
-               v(0) = w*X(1);
-               v(1) = -w*X(0);
-               break;
-            case 3:
-               v(0) = w*X(1);
-               v(1) = -w*X(0);
-               v(2) = 0.0;
-               break;
+            case 1: v(0) = 0;break;
+            case 2: v(0) = ((X(0) > 0.0) - (X(0) < 0.0))* X(0) * X(0); v(1) = ((X(1) > 0.0) - (X(1) < 0.0))* X(1) * X(1); break;
+            case 3: v = X; break;
+            //case 1: v(0) = 1.0; break;
+            //case 2: v(0) = w*X(1); v(1) = -w*X(0); break;
+            //case 3: v(0) = w*X(1); v(1) = -w*X(0); v(2) = 0.0; break;
          }
          break;
       }
-      case 3:
+      case 4:
       {
          // Clockwise twisting rotation in 2D around the origin
-         const double w = M_PI/2;
-         double d = max((X(0)+1.)*(1.-X(0)),0.) * max((X(1)+1.)*(1.-X(1)),0.);
+         const real_t w = M_PI/2;
+         real_t d = max((X(0)+1.)*(1.-X(0)),0.) * max((X(1)+1.)*(1.-X(1)),0.);
          d = d*d;
          switch (dim)
          {
-            case 1:
-               v(0) = 1.0;
-               break;
-            case 2:
-               v(0) = d*w*X(1);
-               v(1) = -d*w*X(0);
-               break;
-            case 3:
-               v(0) = d*w*X(1);
-               v(1) = -d*w*X(0);
-               v(2) = 0.0;
-               break;
+            case 1: v(0) = 1.0; break;
+            case 2: v(0) = d*w*X(1); v(1) = -d*w*X(0); break;
+            case 3: v(0) = d*w*X(1); v(1) = -d*w*X(0); v(2) = 0.0; break;
          }
          break;
       }
    }
+}
+
+// Initial condition
+double u0_function(const Vector &x)
+{
+    int dim = x.Size();
+
+    // map to the reference [-1,1] domain
+    Vector X(dim);
+    for (int i = 0; i < dim; i++)
+    {
+        real_t center = (bb_min[i] + bb_max[i]) * 0.5;
+        X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
+    }
+
+    switch (problem)
+    {
+        case 0:
+        {
+            if(dim != 1)
+            {
+                MFEM_ABORT("Problem 0 only works in 1D!");
+            }
+         
+            if(X(0) < 0.9 && X(0) > 0.5)
+            {
+                return exp(10) * exp(1.0 / (0.5 - X(0))) * exp(1.0 / (X(0) - 0.9));
+            }
+            else if( X(0) < 0.4 && X(0) > 0.2)
+            {
+                return 1.0;
+            }
+            else 
+            {
+                return 0.0;
+            }
+            break;
+        }
+        case 1:
+        {
+            if (dim != 1)
+            {
+                MFEM_ABORT("Problem 1 only works in 1D.");
+            }
+            else
+            {
+                double a = 0.5;
+                double z = -0.7;
+                double delta = 0.005;
+                double alpha = 10.0;
+                double beta = log(2) / 36 / delta / delta;
+                if(X(0) >= -0.8 && X(0) <= -0.6)
+                {
+                    double G1 = exp(-beta * (X(0) - (z - delta)) * (X(0) - (z - delta) ));
+                    double G2 = exp(-beta * (X(0) - (z + delta)) * (X(0) - (z + delta) ));
+                    double G3 = exp(-beta * (X(0) - z) * (X(0) - z ));
+                    return 1.0 / 6.0 * ( G1 + G2 + 4.0 * G3);
+                }
+                else if(X(0) >= -0.4 && X(0) <= -0.2)
+                {
+                    return 1.0;
+                }
+                else if(X(0) >= 0.0 && X(0) <= 0.2)
+                {
+                    return 1.0 - abs(10.0 * (X(0) - 0.1));
+                }
+                else if(X(0) >= 0.4 && X(0) <= 0.6)
+                {
+                    double F1 = sqrt( max(1.0 - alpha * alpha * (X(0) - (a - delta)) *  (X(0) - (a - delta)), 0.0));
+                    double F2 = sqrt( max(1.0 - alpha * alpha * (X(0) - (a + delta)) *  (X(0) - (a + delta)), 0.0));
+                    double F3 = sqrt( max(1.0 - alpha * alpha * (X(0) - a) *  (X(0) - a), 0.0));
+                    return 1.0 / 6.0 * ( F1 + F2 + 4.0 * F3);   
+                }
+                else
+                {
+                    return 0.0;
+                }
+            }
+            break;
+        }
+        case 2:
+        {
+            if (dim != 2) 
+            { 
+                MFEM_ABORT("Solid body rotation does not work in 1D."); 
+            }
+         
+            // Initial condition defined on [0,1]^2
+            Vector y = X;
+            y *= 0.5;
+            y += 0.5;
+            double s = 0.15;
+            double cone = sqrt(pow(y(0) - 0.5, 2.0) + pow(y(1) - 0.25, 2.0));
+            double hump = sqrt(pow(y(0) - 0.25, 2.0) + pow(y(1) - 0.5, 2.0));
+            return (1.0 - cone / s) * (cone <= s) + 0.25 * (1.0 + cos(M_PI*hump / s)) * (hump <= s) +
+                ((sqrt(pow(y(0) - 0.5, 2.0) + pow(y(1) - 0.75, 2.0)) <= s ) && ( abs(y(0) -0.5) >= 0.025 || (y(1) >= 0.85) ) ? 1.0 : 0.0);
+            break;
+        }
+        case 3:
+        {
+            if(x.Norml2() > 0.1)
+            {
+                return 0.0;
+            }
+            return 1.0;
+            break;
+        }
+        case 6:
+        {
+            switch (dim)
+            {
+                case 1:
+                    return exp(-40.*pow(X(0)-0.5,2));
+                case 2:
+                case 3:
+                {
+                    real_t rx = 0.45, ry = 0.25, cx = 0., cy = -0.2, w = 10.;
+                    if (dim == 3)
+                    {
+                        const real_t s = (1. + 0.25*cos(2*M_PI*X(2)));
+                        rx *= s;
+                        ry *= s;
+                    }
+                    return ( std::erfc(w*(X(0)-cx-rx))*std::erfc(-w*(X(0)-cx+rx)) *
+                        std::erfc(w*(X(1)-cy-ry))*std::erfc(-w*(X(1)-cy+ry)) )/16;
+                }
+            }
+            break;
+        }
+        case 4:
+        {
+            real_t x_ = X(0), y_ = X(1), rho, phi;
+            rho = std::hypot(x_, y_);
+            phi = atan2(y_, x_);
+            return pow(sin(M_PI*rho),2)*sin(3*phi);
+            break;
+        }
+        case 5:
+        {
+            const real_t f = M_PI;
+            return sin(f*X(0))*sin(f*X(1));
+            break;
+        }
+    }
+    return 0.0;
+}
+
+
+/*
+// Velocity coefficient
+void velocity_function(const Vector &x, Vector &v)
+{
+    int dim = x.Size();
+
+    // map to the reference [-1,1] domain
+    Vector X(dim);
+    for (int i = 0; i < dim; i++)
+    {
+        double center = (bb_min[i] + bb_max[i]) * 0.5;
+        X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
+    }
+
+    switch (problem)
+    {
+        case 0:
+        {
+            // Translations in 1D, 2D, and 3D
+            switch (dim)
+            {
+                case 1:
+                    v(0) = 1.0;
+                    break;
+                case 2:
+                    v(0) = sqrt(2./3.);
+                    v(1) = sqrt(1./3.);
+                    break;
+                case 3:
+                    v(0) = sqrt(3./6.);
+                    v(1) = sqrt(2./6.);
+                    v(2) = sqrt(1./6.);
+                    break;
+            }
+            break;
+        }
+        case 1:
+        case 2:
+        {
+            // Clockwise rotation in 2D around the origin
+            const double w = M_PI/2;
+            switch (dim)
+            {
+                case 1:
+                    v(0) = 1.0;
+                    break;
+                case 2:
+                    v(0) = w*X(1);
+                    v(1) = -w*X(0);
+                    break;
+                case 3:
+                    v(0) = w*X(1);
+                    v(1) = -w*X(0);
+                    v(2) = 0.0;
+                    break;
+            }
+            break;
+        }
+        case 3:
+        {
+            // Clockwise twisting rotation in 2D around the origin
+            const double w = M_PI/2;
+            double d = max((X(0)+1.)*(1.-X(0)),0.) * max((X(1)+1.)*(1.-X(1)),0.);
+            d = d*d;
+            switch (dim)
+            {
+                case 1:
+                    v(0) = 1.0;
+                    break;
+                case 2:
+                    v(0) = d*w*X(1);
+                    v(1) = -d*w*X(0);
+                    break;
+                case 3:
+                    v(0) = d*w*X(1);
+                    v(1) = -d*w*X(0);
+                    v(2) = 0.0;
+                    break;
+            }
+            break;
+        }
+    }
 }
 
 
 // Initial condition
 double u0_function(const Vector &x)
 {
-   int dim = x.Size();
+    int dim = x.Size();
 
-   // map to the reference [-1,1] domain
-   Vector X(dim);
-   for (int i = 0; i < dim; i++)
-   {
-      double center = (bb_min[i] + bb_max[i]) * 0.5;
-      X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
-   }
+    // map to the reference [-1,1] domain
+    Vector X(dim);
+    for (int i = 0; i < dim; i++)
+    {
+        double center = (bb_min[i] + bb_max[i]) * 0.5;
+        X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
+    }
 
-   switch (problem)
-   {
-      case 0:
-      case 1:
-      {
-         switch (dim)
-         {
-            case 1:
-               return exp(-40.*pow(X(0)-0.5,2));
-            case 2:
-            case 3:
+    switch (problem)
+    {
+        case 0:
+        case 1:
+        {
+            switch (dim)
             {
-               double rx = 0.45, ry = 0.25, cx = 0., cy = -0.2, w = 10.;
-               if (dim == 3)
-               {
-                  const double s = (1. + 0.25*cos(2*M_PI*X(2)));
-                  rx *= s;
-                  ry *= s;
-               }
-               return ( std::erfc(w*(X(0)-cx-rx))*std::erfc(-w*(X(0)-cx+rx)) *
-                        std::erfc(w*(X(1)-cy-ry))*std::erfc(-w*(X(1)-cy+ry)) )/16.0;
+                case 1:
+                    return exp(-40.*pow(X(0)-0.5,2));
+                case 2:
+                case 3:
+                {
+                    double rx = 0.45, ry = 0.25, cx = 0., cy = -0.2, w = 10.;
+                    if (dim == 3)
+                    {
+                        const double s = (1. + 0.25*cos(2*M_PI*X(2)));
+                        rx *= s;
+                        ry *= s;
+                    }
+                    return ( std::erfc(w*(X(0)-cx-rx))*std::erfc(-w*(X(0)-cx+rx)) *
+                            std::erfc(w*(X(1)-cy-ry))*std::erfc(-w*(X(1)-cy+ry)) )/16.0;
+                }
             }
-         }
-      }
-      case 2:
-      {
-         double x_ = X(0), y_ = X(1), rho, phi;
-         rho = std::hypot(x_, y_);
-         phi = atan2(y_, x_);
-         return pow(sin(M_PI*rho),2)*sin(3*phi);
-      }
-      case 3:
-      {
-         const double f = M_PI;
-         return sin(f*X(0))*sin(f*X(1));
-      }
-   }
-   return 0.0;
-}
+        }
+        case 2:
+        {
+            double x_ = X(0), y_ = X(1), rho, phi;
+            rho = std::hypot(x_, y_);
+            phi = atan2(y_, x_);
+            return pow(sin(M_PI*rho),2)*sin(3*phi);
+        }
+        case 3:
+        {
+            const double f = M_PI;
+            return sin(f*X(0))*sin(f*X(1));
+        }
+    }
+    return 0.0;
+} //*/
 
 // Inflow boundary condition (0.0 for the problems considered in this example)
 double inflow_function(const Vector &x)
