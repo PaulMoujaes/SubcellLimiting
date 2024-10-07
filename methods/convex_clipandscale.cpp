@@ -1,6 +1,6 @@
-#include "clipandscale.hpp"
+#include "convex_clipandscale.hpp"
 
-ClipAndScale::ClipAndScale(ParFiniteElementSpace &fes_,
+Convex_ClipAndScale::Convex_ClipAndScale(ParFiniteElementSpace &fes_,
                            FunctionCoefficient &inflow,
                            VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, int exec_mode_):
    FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel, exec_mode_)
@@ -10,7 +10,7 @@ ClipAndScale::ClipAndScale(ParFiniteElementSpace &fes_,
    udot.SetSize(lumpedmassmatrix.Size());
 }
 
-void ClipAndScale::ComputeBounds(const Vector &u, Array<double> &u_min,
+void Convex_ClipAndScale::ComputeBounds(const Vector &u, Array<double> &u_min,
                                  Array<double> &u_max) const
 {
    // iterate over local number of dofs on this processor and compute maximum and minimum over local stencil
@@ -35,7 +35,7 @@ void ClipAndScale::ComputeBounds(const Vector &u, Array<double> &u_min,
    gcomm.Bcast(umin);
 }
 
-void ClipAndScale::Mult(const Vector &x, Vector &y) const
+void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
 {
      
     if(remap)
@@ -78,6 +78,7 @@ void ClipAndScale::Mult(const Vector &x, Vector &y) const
       fe.SetSize(dofs.Size());
       fe_star.SetSize(dofs.Size());
       gammae.SetSize(dofs.Size());
+      ue_bar.SetSize(dofs.Size());
          
       x.GetSubVector(dofs, ue);
       udot.GetSubVector(dofs, udote);
@@ -85,6 +86,7 @@ void ClipAndScale::Mult(const Vector &x, Vector &y) const
       re = 0.0;
       fe = 0.0;
       gammae = 0.0;
+      ue_bar = 0.0;
       for (int i = 0; i < dofs.Size(); i++)
       {
          for (int j = 0; j < i; j++)
@@ -100,6 +102,10 @@ void ClipAndScale::Mult(const Vector &x, Vector &y) const
             // for bounding fluxes
             gammae(i) += dije;
             gammae(j) += dije;
+             
+            // add 2dije * uije and 2djie * ujie
+            ue_bar(i) += dije * (ue(i) + ue(j)) - Ke(i,j) * (ue(j) - ue(i));
+            ue_bar(j) += dije * (ue(j) + ue(i)) - Ke(j,i) * (ue(i) - ue(j));
              
             // assemble raw antidifussive fluxes f_{i,e} = sum_j m_{ij,e} (udot_i - udot_j) - d_{ij,e} (u_i - u_j)
             // note fije = - fjie
@@ -122,8 +128,8 @@ void ClipAndScale::Mult(const Vector &x, Vector &y) const
       {
          
          // bounding fluxes to enforce u_i = u_i_min => du/dt >= 0 and vise versa for u_i = u_i_max         
-         double fie_max = gammae(i) * (umax[dofs[i]] - ue(i));
-         double fie_min = gammae(i) * (umin[dofs[i]] - ue(i));
+         double fie_max = gammae(i) * umax[dofs[i]] - ue_bar(i);
+         double fie_min = gammae(i) * umin[dofs[i]] - ue_bar(i);
          
          fe_star(i) = min(max(fie_min, fe(i)), fie_max);
 
@@ -165,5 +171,5 @@ void ClipAndScale::Mult(const Vector &x, Vector &y) const
 }
 
 
-ClipAndScale::~ClipAndScale()
+Convex_ClipAndScale::~Convex_ClipAndScale()
 { }

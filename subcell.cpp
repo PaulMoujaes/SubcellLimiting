@@ -168,9 +168,9 @@ int main(int argc, char *argv[])
         double t = 0.0;
         while (t < t_final)
         {
-            t += dt;
             // Move the mesh nodes.
             x.Add(min(dt, t_final-t), v);
+            t += min(dt, t_final-t);
             // Update the node velocities.
             v.ProjectCoefficient(v_coeff);
         } 
@@ -264,7 +264,14 @@ int main(int argc, char *argv[])
               }
               else if(dim == 2 && problem != 2)
               {
-                sout << "R";
+                if(exec_mode == 1)
+                {
+                    sout << "PPPPPPPPPPPPPPPPL";
+                }
+                else
+                {
+                    sout << "R";
+                }
               }
               sout << endl;
 
@@ -282,6 +289,8 @@ int main(int argc, char *argv[])
         case 0: met = new LowOrderScheme(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
             break;
         case 1: met = new ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
+            break;  
+        case 2: met = new Convex_ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
             break;  
         default:
             MFEM_ABORT("Unkown scheme!");
@@ -401,16 +410,14 @@ void velocity_function(const Vector &x, Vector &v)
         case 3:
         {
             // Clockwise rotation in 2D around the origin
-            const double w = M_PI/2;
+            const real_t w = M_PI/2;
             switch (dim)
             {
-                case 1: v(0) = 0;break;
-                case 2: v(0) = ((X(0) > 0.0) - (X(0) < 0.0))* X(0) * X(0); v(1) = ((X(1) > 0.0) - (X(1) < 0.0))* X(1) * X(1); break;
-                case 3: v = X; break;
-                //case 1: v(0) = 1.0; break;
-                //case 2: v(0) = w*X(1); v(1) = -w*X(0); break;
-                //case 3: v(0) = w*X(1); v(1) = -w*X(0); v(2) = 0.0; break;
+                case 1: v(0) = 1.0; break;
+                case 2: v(0) = w*X(1); v(1) = -w*X(0); break;
+                case 3: v(0) = w*X(1); v(1) = -w*X(0); v(2) = 0.0; break;
             }
+         break;
             break;
         }
         case 4:
@@ -556,15 +563,6 @@ double u0_function(const Vector &x)
             break;
         }
         case 3:
-        {
-            if(x.Norml2() > 0.1)
-            {
-                return 0.0;
-            }
-            return 1.0;
-            break;
-        }
-        case 6:
         {
             switch (dim)
             {

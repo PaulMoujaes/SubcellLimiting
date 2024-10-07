@@ -22,7 +22,7 @@ protected:
    //ParGridFunction u_inflow;
 
    mutable DenseMatrix Ke, Me;
-   mutable Vector ue, re, udote, fe, fe_star, gammae;
+   mutable Vector ue, re, ue_bar, udote, fe, fe_star, gammae;
    mutable ConvectionIntegrator conv_int, conv_int_remap;
    mutable ConvectionIntegrator *conv;
    mutable MassIntegrator mass_int;
