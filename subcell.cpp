@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
 
     // 2. Parse command-line options.
     problem = 0;
-    exec_mode = 0;
+    //exec_mode = 0;
     int mesh_order = 3;
     const char *mesh_file = "../data/periodic-hexagon.mesh";
     int ser_ref_levels = 2;
@@ -54,8 +54,8 @@ int main(int argc, char *argv[])
                     "Mesh file to use.");
     args.AddOption(&problem, "-p", "--problem",
                     "Problem setup to use. See options in velocity_function().");
-    args.AddOption(&exec_mode, "-e", "--execute-mode",
-                    "0 for standard linear advection, 1 for remap mode with moving mesh.");
+    //args.AddOption(&exec_mode, "-e", "--execute-mode",
+    //                "0 for standard linear advection, 1 for remap mode with moving mesh.");
     args.AddOption(&mesh_order, "-mo", "--mesh-order",
                     "order of the mesh.");
     args.AddOption(&ser_ref_levels, "-r", "--refine-serial",
@@ -99,6 +99,7 @@ int main(int argc, char *argv[])
         args.PrintOptions(cout);
     }
 
+    exec_mode = (int) (problem >= 10);
     Mesh *mesh = new Mesh(mesh_file, 1, 1);
     int dim = mesh->Dimension();
 
@@ -177,21 +178,9 @@ int main(int argc, char *argv[])
         // Pseudotime velocity.
         add(x0, -1.0, x, v_gf);
         
-        Array<int> ess_bdr, ess_vdofs;
-        if (pmesh->bdr_attributes.Size() > 0)
-        {
-            ess_bdr.SetSize(pmesh->bdr_attributes.Max());
-        }
-        ess_bdr = 1;
-        mesh_pfes.GetEssentialVDofs(ess_bdr, ess_vdofs);
-
-        for (int i = 0; i < ess_vdofs.Size(); i++)
-        {
-            //if (ess_vdofs[i] == -1) { v_gf(i) = 0.0; }
-        }
         // Return the mesh to the initial configuration.
         x = x0;
-        //t_final = 1.0;
+        t_final = 1.0;
     }
     //*/
 
@@ -215,14 +204,18 @@ int main(int argc, char *argv[])
     mL->Finalize();
     mL->SpMat().GetDiag(lumpedmassmatrix);
 
-
     ParBilinearForm *m = new ParBilinearForm(pfes);
     m->AddDomainIntegrator(new MassIntegrator);
     m->Assemble();
     m->Finalize();
 
-    ParGridFunction *u = new ParGridFunction(pfes);
-    u->ProjectCoefficient(u0);
+    ParGridFunction u(pfes);
+    u.ProjectCoefficient(u0);
+
+    double loc_mass = u * lumpedmassmatrix;
+    double glob_init_mass = 0.0;
+    MPI_Allreduce(&loc_mass, &glob_init_mass, 1, MPI_DOUBLE, MPI_SUM,
+              MPI_COMM_WORLD);
 
     {
         ostringstream mesh_name, sol_name;
@@ -233,7 +226,7 @@ int main(int argc, char *argv[])
         pmesh->Print(omesh);
         ofstream osol(sol_name.str().c_str());
         osol.precision(precision);
-        u->Save(osol);
+        u.Save(osol);
     }
 
     socketstream sout;
@@ -259,7 +252,7 @@ int main(int argc, char *argv[])
         {
             sout << "parallel " << num_procs << " " << myid << "\n";
             sout.precision(precision);
-            sout << "solution\n" << *pmesh << *u;
+            sout << "solution\n" << *pmesh << u;
             sout << "window_title '" << "advection" << "'\n"
               << "window_geometry "
               << 0 << " " << 0 << " " << 1080 << " " << 1080
@@ -283,22 +276,16 @@ int main(int argc, char *argv[])
         }
     }
 
-    FE_Evolution *met = NULL;
-    //*
-    //if(exec_mode == 0)
-    //{
-        switch (scheme)
-        {
-            case 0: met = new LowOrderScheme(*pfes, inflow, velocity, *m, x0, v_gf);
-                break;
-            case 1: met = new ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf);
-                break;  
-            default:
-                MFEM_ABORT("Unkown scheme!");
-
-        }
-    //}
-    //*/
+    FE_Evolution *met = NULL;  
+    switch (scheme)
+    {
+        case 0: met = new LowOrderScheme(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
+            break;
+        case 1: met = new ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
+            break;  
+        default:
+            MFEM_ABORT("Unkown scheme!");
+    }
 
     double t = 0.0;
     met->SetTime(t);
@@ -306,10 +293,12 @@ int main(int argc, char *argv[])
 
     bool done = false;
 
+    tic_toc.Clear();
+    tic_toc.Start();
     for (int ti = 0; !done; )
     {
         double dt_real = min(dt, t_final - t);
-        ode_solver->Step(*u, t, dt_real);
+        ode_solver->Step(u, t, dt_real);
         ti++;
 
         done = (t >= t_final - 1e-8*dt);
@@ -323,9 +312,36 @@ int main(int argc, char *argv[])
             if (visualization)
             {
                 sout << "parallel " << num_procs << " " << myid << "\n";
-                sout << "solution\n" << *pmesh << *u << flush;
+                sout << "solution\n" << *pmesh << u << flush;
             }
         }
+    }
+    
+    tic_toc.Stop();
+    double min_loc = u.Min();
+    double max_loc = u.Max();
+    double min_glob, max_glob;
+
+    MPI_Allreduce(&min_loc, &min_glob, 1, MPI_DOUBLE, MPI_MIN,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(&max_loc, &max_glob, 1, MPI_DOUBLE, MPI_MAX,
+                  MPI_COMM_WORLD);
+
+    mL->BilinearForm::operator=(0.0);
+    mL->Assemble();
+    mL->SpMat().GetDiag(lumpedmassmatrix);
+
+    loc_mass = u * lumpedmassmatrix;
+    double glob_end_mass = 0.0;
+    MPI_Allreduce(&loc_mass, &glob_end_mass, 1, MPI_DOUBLE, MPI_SUM,
+              MPI_COMM_WORLD);
+
+    if(Mpi::Root())
+    {
+        cout << "Time stepping loop done in " << tic_toc.RealTime() << " seconds."<< endl;
+        cout << endl;
+        cout << "Difference in solution mass: " << abs(glob_init_mass - glob_end_mass) << endl;
+        cout << "u in [" << min_glob<< ", " << max_glob<< "]\n\n"; 
     }
 
     {
@@ -333,10 +349,10 @@ int main(int argc, char *argv[])
         sol_name << "output/final." << setfill('0') << setw(6) << myid;
         ofstream osol(sol_name.str().c_str());
         osol.precision(precision);
-        u->Save(osol);
+        u.Save(osol);
     }
 
-    delete u;
+    //delete u;
     delete pfes;
     delete pmesh;
     delete ode_solver;
@@ -351,91 +367,94 @@ int main(int argc, char *argv[])
 // Velocity coefficient
 void velocity_function(const Vector &x, Vector &v)
 {
-   int dim = x.Size();
+    int dim = x.Size();
 
-   // map to the reference [-1,1] domain
-   Vector X(dim);
-   for (int i = 0; i < dim; i++)
-   {
-      double center = (bb_min[i] + bb_max[i]) * 0.5;
-      X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
-   }
+    // map to the reference [-1,1] domain
+    Vector X(dim);
+    for (int i = 0; i < dim; i++)
+    {
+        double center = (bb_min[i] + bb_max[i]) * 0.5;
+        X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
+    }
 
-   switch (problem)
-   {
-      case 0:
-      case 1:
-      {
-         // Translations in 1D, 2D, and 3D
-         switch (dim)
-         {
-            case 1: v(0) = 1.0; break;
-            case 2: v(0) = sqrt(2./3.); v(1) = sqrt(1./3.); break;
-            case 3: v(0) = sqrt(3./6.); v(1) = sqrt(2./6.); v(2) = sqrt(1./6.);
-               break;
-         }
-         break;
-      }
-      case 2:
-      {
-        v(0) =  sin(M_PI*X(0)) * cos(M_PI*X(1));
-         v(1) = -cos(M_PI*X(0)) * sin(M_PI*X(1));
-         //v(0) = 2.0 * M_PI * (- X(1));
-         //v(1) = 2.0 * M_PI * (X(0) ); 
-         // Gresho deformation used for mesh motion in remap tests.
-         const double r = sqrt(X(0)*X(0) + X(1)*X(1));
-         if (r < 0.2)
-         {
-            v(0) =  5.0 * X(1);
-            v(1) = -5.0 * X(0);
-         }
-         else if (r < 0.4)
-         {
-            v(0) =  2.0 * X(1) / r - 5.0 * X(1);
-            v(1) = -2.0 * X(0) / r + 5.0 * X(0);
-         }
-         else { v = 0.0; }
-
-
-         for (int d = 0; d < dim; d++) { X(d) = X(d) * 0.5 + 0.5; }
-
-         if (dim == 1) { MFEM_ABORT("Not implemented."); }
-         v(0) =  sin(M_PI*X(0)) * cos(M_PI*X(1));
-         v(1) = -cos(M_PI*X(0)) * sin(M_PI*X(1));
-
-         break;
-      }
-
-      case 3:
-      {
-         // Clockwise rotation in 2D around the origin
-         const double w = M_PI/2;
-         switch (dim)
-         {
-            case 1: v(0) = 0;break;
-            case 2: v(0) = ((X(0) > 0.0) - (X(0) < 0.0))* X(0) * X(0); v(1) = ((X(1) > 0.0) - (X(1) < 0.0))* X(1) * X(1); break;
-            case 3: v = X; break;
-            //case 1: v(0) = 1.0; break;
-            //case 2: v(0) = w*X(1); v(1) = -w*X(0); break;
-            //case 3: v(0) = w*X(1); v(1) = -w*X(0); v(2) = 0.0; break;
-         }
-         break;
-      }
-      case 4:
-      {
-         // Clockwise twisting rotation in 2D around the origin
-         const double w = M_PI/2;
-         double d = max((X(0)+1.)*(1.-X(0)),0.) * max((X(1)+1.)*(1.-X(1)),0.);
-         d = d*d;
-         switch (dim)
-         {
-            case 1: v(0) = 1.0; break;
-            case 2: v(0) = d*w*X(1); v(1) = -d*w*X(0); break;
-            case 3: v(0) = d*w*X(1); v(1) = -d*w*X(0); v(2) = 0.0; break;
-         }
-         break;
-      }
-   }
+    switch (problem)
+    {
+        case 0:
+        case 1:
+        {
+            // Translations in 1D, 2D, and 3D
+            switch (dim)
+            {
+                case 1: v(0) = 1.0; break;
+                case 2: v(0) = sqrt(2./3.); v(1) = sqrt(1./3.); break;
+                case 3: v(0) = sqrt(3./6.); v(1) = sqrt(2./6.); v(2) = sqrt(1./6.);
+                break;
+            }
+            break;
+        }
+        case 2:
+        {
+            v(0) = 2.0 * M_PI * (- X(1));
+            v(1) = 2.0 * M_PI * (X(0) ); 
+            break;
+        }
+        case 3:
+        {
+            // Clockwise rotation in 2D around the origin
+            const double w = M_PI/2;
+            switch (dim)
+            {
+                case 1: v(0) = 0;break;
+                case 2: v(0) = ((X(0) > 0.0) - (X(0) < 0.0))* X(0) * X(0); v(1) = ((X(1) > 0.0) - (X(1) < 0.0))* X(1) * X(1); break;
+                case 3: v = X; break;
+                //case 1: v(0) = 1.0; break;
+                //case 2: v(0) = w*X(1); v(1) = -w*X(0); break;
+                //case 3: v(0) = w*X(1); v(1) = -w*X(0); v(2) = 0.0; break;
+            }
+            break;
+        }
+        case 4:
+        {
+            // Clockwise twisting rotation in 2D around the origin
+            const double w = M_PI/2;
+            double d = max((X(0)+1.)*(1.-X(0)),0.) * max((X(1)+1.)*(1.-X(1)),0.);
+            d = d*d;
+            switch (dim)
+            {
+                case 1: v(0) = 1.0; break;
+                case 2: v(0) = d*w*X(1); v(1) = -d*w*X(0); break;
+                case 3: v(0) = d*w*X(1); v(1) = -d*w*X(0); v(2) = 0.0; break;
+            }
+            break;
+        }
+        case 12:
+        {
+            if (dim != 2) { MFEM_ABORT("Not implemented."); }
+            for (int d = 0; d < dim; d++) { X(d) = X(d) * 0.5 + 0.5; }
+            v(0) =  sin(M_PI*X(0)) * cos(M_PI*X(1));
+            v(1) = -cos(M_PI*X(0)) * sin(M_PI*X(1));
+            break;
+        }
+        case 13:
+        {
+            // Gresho deformation used for mesh motion in remap tests.
+            const double r = sqrt(X(0)*X(0) + X(1)*X(1));
+            if (r < 0.2)
+            {
+                v(0) =  5.0 * X(1);
+                v(1) = -5.0 * X(0);
+            }
+            else if (r < 0.4)
+            {
+                v(0) =  2.0 * X(1) / r - 5.0 * X(1);
+                v(1) = -2.0 * X(0) / r + 5.0 * X(0);
+            }
+            else { v = 0.0; }
+            break;
+        }
+        default:
+            MFEM_ABORT("No velocity function for this problem")
+    }
 }
 
 // Initial condition
@@ -451,7 +470,9 @@ double u0_function(const Vector &x)
         X(i) = 2 * (x(i) - center) / (bb_max[i] - bb_min[i]);
     }
 
-    switch (problem)
+    int problem_num = problem % 10;
+
+    switch (problem_num)
     {
         case 0:
         {

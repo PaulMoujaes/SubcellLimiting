@@ -17,12 +17,14 @@ protected:
    GroupCommunicator &gcomm;
    int *I, *J;
    VectorGridFunctionCoefficient v_mesh_coeff;
+   bool remap;
    //ParLinearForm b_lumped;
    //ParGridFunction u_inflow;
 
    mutable DenseMatrix Ke, Me;
    mutable Vector ue, re, udote, fe, fe_star, gammae;
-   mutable ConvectionIntegrator conv_int;
+   mutable ConvectionIntegrator conv_int, conv_int_remap;
+   mutable ConvectionIntegrator *conv;
    mutable MassIntegrator mass_int;
    mutable Vector z;
 
@@ -32,7 +34,7 @@ public:
    FE_Evolution(ParFiniteElementSpace &fes_,
                    FunctionCoefficient &inflow,
                    VectorCoefficient &velocity,
-                   ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel);
+                   ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, int exec_mode_);
 
    virtual void Mult(const Vector &x, Vector &y) const = 0;
 

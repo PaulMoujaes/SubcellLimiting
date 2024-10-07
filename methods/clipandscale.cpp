@@ -2,8 +2,8 @@
 
 ClipAndScale::ClipAndScale(ParFiniteElementSpace &fes_,
                            FunctionCoefficient &inflow,
-                           VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel):
-   FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel)
+                           VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, int exec_mode_):
+   FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel, exec_mode_)
 {
    umin.SetSize(lumpedmassmatrix.Size());
    umax.SetSize(lumpedmassmatrix.Size());
@@ -37,24 +37,28 @@ void ClipAndScale::ComputeBounds(const Vector &u, Array<double> &u_min,
 
 void ClipAndScale::Mult(const Vector &x, Vector &y) const
 {
-    const double t = GetTime();
-    // since v_gf has is multiplied with -1 for the convection integrator to have the correct direction
-    double mt = - t;
-    add(x0, mt, v_gf, x_now);
+    if(remap)
+    { 
+        const double t = GetTime();
+        // since v_gf has is multiplied with -1 for the convection integrator to have the correct direction
+        double mt = - t;
+        add(x0, mt, v_gf, x_now);
 
-    lumpedM.BilinearForm::operator=(0.0);
-    lumpedM.Assemble();
-    lumpedM.SpMat().GetDiag(lumpedmassmatrix);
-    Array<double> lumpedmassmatrix_array(lumpedmassmatrix.GetData(),
+        lumpedM.BilinearForm::operator=(0.0);
+        lumpedM.Assemble();
+        lumpedM.SpMat().GetDiag(lumpedmassmatrix);
+        Array<double> lumpedmassmatrix_array(lumpedmassmatrix.GetData(),
                                         lumpedmassmatrix.Size());
-    gcomm.Reduce<double>(lumpedmassmatrix_array, GroupCommunicator::Sum);
-    gcomm.Bcast(lumpedmassmatrix_array);
-    
-   y = 0.0;
+        gcomm.Reduce<double>(lumpedmassmatrix_array, GroupCommunicator::Sum);
+        gcomm.Bcast(lumpedmassmatrix_array);
+    }
 
-   // compute low-order time derivative for high-order stabilization and local bounds
-   ComputeLOTimeDerivatives(x, udot);
-   ComputeBounds(x, umin, umax);
+    y = 0.0;
+
+    // compute low-order time derivative for high-order stabilization and local bounds
+    ComputeLOTimeDerivatives(x, udot);
+    //udot = 0.0;
+    ComputeBounds(x, umin, umax);
 
    Array<int> dofs;
    for (int e = 0; e < fes.GetNE(); e++)
@@ -63,7 +67,7 @@ void ClipAndScale::Mult(const Vector &x, Vector &y) const
       auto eltrans = fes.GetElementTransformation(e);
 
       // assemble element mass and convection matrices
-      conv_int.AssembleElementMatrix(*element, *eltrans, Ke);
+      conv->AssembleElementMatrix(*element, *eltrans, Ke);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
 
       fes.GetElementDofs(e, dofs);
