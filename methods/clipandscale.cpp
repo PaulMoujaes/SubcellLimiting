@@ -1,7 +1,6 @@
 #include "clipandscale.hpp"
 
-ClipAndScale::ClipAndScale(ParFiniteElementSpace &fes_,
-                           FunctionCoefficient &inflow,
+ClipAndScale::ClipAndScale(ParFiniteElementSpace &fes_, FunctionCoefficient &inflow,
                            VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, int exec_mode_):
    FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel, exec_mode_)
 {

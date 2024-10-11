@@ -1,8 +1,8 @@
 #include "feevol.hpp"
 
-FE_Evolution::FE_Evolution(ParFiniteElementSpace &fes_,
-                                 FunctionCoefficient &inflow,
-                                 VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, int exec_mode_) :
+FE_Evolution::FE_Evolution(ParFiniteElementSpace &fes_, FunctionCoefficient &inflow,
+                                 VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, 
+                                 ParGridFunction &mesh_vel, int exec_mode_) :
    TimeDependentOperator(M.Height()),
    lumpedM(&fes_), fes(fes_), x_now(*fes_.GetMesh()->GetNodes()), 
    gcomm(fes_.GroupComm()), I(M.SpMat().GetI()), J(M.SpMat().GetJ()),
@@ -65,7 +65,7 @@ void FE_Evolution::ComputeLOTimeDerivatives(const Vector &u,
       u.GetSubVector(dofs, ue);
       re.SetSize(dofs.Size());
       re = 0.0;
-
+      //*
       for (int i = 0; i < dofs.Size(); i++)
       {
          for (int j = 0; j < i; j++)
@@ -78,6 +78,8 @@ void FE_Evolution::ComputeLOTimeDerivatives(const Vector &u,
             re(j) -= diffusion;
          }
       }
+      //*/
+
       // Add -K_e u_e to obtain (-K_e + D_e) u_e and add element contribution
       // to global vector
       Ke.AddMult(ue, re, -1.0);

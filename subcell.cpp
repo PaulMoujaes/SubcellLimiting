@@ -8,6 +8,10 @@ using namespace mfem;
 
 // Velocity coefficient
 void velocity_function(const Vector &x, Vector &v);
+void test_velocity_function(const Vector &x, Vector &v)
+{
+    v = x;
+}
 
 // Initial condition
 double u0_function(const Vector &x);
@@ -33,7 +37,7 @@ int main(int argc, char *argv[])
 
     // 2. Parse command-line options.
     problem = 0;
-    //exec_mode = 0;
+    bool subcell = false;
     int mesh_order = 3;
     const char *mesh_file = "../data/periodic-hexagon.mesh";
     int ser_ref_levels = 2;
@@ -100,6 +104,8 @@ int main(int argc, char *argv[])
     }
 
     exec_mode = (int) (problem >= 10);
+    subcell = (scheme > 2);
+
     Mesh *mesh = new Mesh(mesh_file, 1, 1);
     int dim = mesh->Dimension();
 
@@ -145,14 +151,17 @@ int main(int argc, char *argv[])
         mesh_order = 1;
     }
 
-    //mesh_order = 3;    
-    pmesh->SetCurvature(mesh_order);
     H1_FECollection mesh_fec(mesh_order, dim, BasisType::GaussLobatto);
 
     // Current mesh positions.
     ParFiniteElementSpace mesh_pfes(pmesh, &mesh_fec, dim);
     ParGridFunction x(&mesh_pfes);
-    pmesh->SetNodalGridFunction(&x);
+
+    if(exec_mode == 1)
+    {   
+        pmesh->SetCurvature(mesh_order);
+        pmesh->SetNodalGridFunction(&x);
+    }
 
     // Store initial mesh positions.
     Vector x0 = x;
@@ -171,6 +180,7 @@ int main(int argc, char *argv[])
             // Move the mesh nodes.
             x.Add(min(dt, t_final-t), v);
             t += min(dt, t_final-t);
+
             // Update the node velocities.
             v.ProjectCoefficient(v_coeff);
         } 
@@ -266,7 +276,7 @@ int main(int argc, char *argv[])
               {
                 if(exec_mode == 1)
                 {
-                    sout << "PPPPPPPPPPPPPPPPL";
+                    sout << "PPPPPPPPPPPPPPPPl";
                 }
                 else
                 {
@@ -275,11 +285,39 @@ int main(int argc, char *argv[])
               }
               sout << endl;
 
-            if (Mpi::Root())
-            {
-                cout << "GLVis visualization paused."
-                    << " Press space (in the GLVis window) to resume it.\n";
-            }
+            //if (Mpi::Root())
+            //{
+            //    cout << "GLVis visualization paused."
+            //        << " Press space (in the GLVis window) to resume it.\n";
+            //}
+        }
+    }
+
+    ParMesh *subcell_mesh = NULL;
+    FiniteElementCollection *fec_sub = NULL;
+    ParFiniteElementSpace *pfes_sub = NULL;
+    ParFiniteElementSpace *dpfes_sub = NULL;
+    ParGridFunction *xsub = NULL;
+    ParGridFunction *v_sub_gf;
+    VectorGridFunctionCoefficient v_sub_coef;
+    Vector x0_sub;
+
+    if(subcell)
+    {
+        const int btype = BasisType::ClosedUniform;
+        subcell_mesh = new ParMesh(ParMesh::MakeRefined(*pmesh, order, btype));
+        fec_sub = new H1_FECollection(1, dim, BasisType::ClosedUniform);
+        pfes_sub = new ParFiniteElementSpace(subcell_mesh, fec_sub);
+
+        if(exec_mode == 1)
+        {
+            dpfes_sub = new ParFiniteElementSpace(subcell_mesh, fec_sub, dim);
+            xsub = new ParGridFunction(dpfes_sub);
+            v_sub_gf = new ParGridFunction(dpfes_sub);
+            VectorGridFunctionCoefficient v_sub_coef(&v_gf);
+            v_sub_gf->ProjectCoefficient(v_sub_coef);
+            subcell_mesh->SetCurvature(1);
+            subcell_mesh->SetNodalGridFunction(xsub);
         }
     }
 
@@ -291,7 +329,9 @@ int main(int argc, char *argv[])
         case 1: met = new ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
             break;  
         case 2: met = new Convex_ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
-            break;  
+            break;
+        case 3: met = new Subcell_LowOrder(*pfes, *pfes_sub, inflow, velocity, *m, x0, v_gf, *v_sub_gf, exec_mode);
+            break;
         default:
             MFEM_ABORT("Unkown scheme!");
     }
@@ -301,6 +341,11 @@ int main(int argc, char *argv[])
     ode_solver->Init(*met);
 
     bool done = false;
+    if(Mpi::Root())
+    {
+        cout << endl;
+        cout << "Preprocessing done! Entering time loop!" << endl;
+    }
 
     tic_toc.Clear();
     tic_toc.Start();
@@ -405,6 +450,10 @@ void velocity_function(const Vector &x, Vector &v)
         {
             v(0) = 2.0 * M_PI * (- X(1));
             v(1) = 2.0 * M_PI * (X(0) ); 
+            if(dim > 2)
+            {
+                v(2) = 0.0;
+            }
             break;
         }
         case 3:
@@ -548,7 +597,7 @@ double u0_function(const Vector &x)
         {
             if (dim != 2) 
             { 
-                MFEM_ABORT("Solid body rotation does not work in 1D."); 
+                //MFEM_ABORT("Solid body rotation only works in 2 D."); 
             }
          
             // Initial condition defined on [0,1]^2

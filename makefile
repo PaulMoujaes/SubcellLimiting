@@ -28,7 +28,7 @@ OUT_DIR = output
 DIRS = $(MET_DIR) $(AUX_DIR) 
 
 #AUX_FILES = $(BUI_DIR)/dofs.o # $(BUI_DIR)/tools.o
-MET_FILES = $(BUI_DIR)/feevol.met $(BUI_DIR)/loworder.met $(BUI_DIR)/clipandscale.met $(BUI_DIR)/convex_clipandscale.met
+MET_FILES = $(BUI_DIR)/feevol.met $(BUI_DIR)/loworder.met $(BUI_DIR)/clipandscale.met $(BUI_DIR)/convex_clipandscale.met $(BUI_DIR)/subcell_feevol.met $(BUI_DIR)/subcell_loworder.met # $(BUI_DIR)/subcell_convex_clipandscale.met
 #PRO_FILES = $(BUI_DIR)/system.pro
 #INT_FILES = $(BUI_DIR)/divergenceintegrator.int 
 #FP_FILES = $(BUI_DIR)/fixedpointiteration.fp $(BUI_DIR)/standardfpiter.fp $(BUI_DIR)/jacobianfreenewton.fp $(BUI_DIR)/fpprecondjacobianfreenewton.fp

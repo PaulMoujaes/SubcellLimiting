@@ -1,41 +1,13 @@
-#include "convex_clipandscale.hpp"
+#include "subcell_loworder.hpp"
 
-Convex_ClipAndScale::Convex_ClipAndScale(ParFiniteElementSpace &fes_, 
-                           FunctionCoefficient &inflow,
-                           VectorCoefficient &velocity, ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, int exec_mode_):
-   FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel, exec_mode_)
+Subcell_LowOrder::Subcell_LowOrder(ParFiniteElementSpace &fes_, ParFiniteElementSpace &subcell_fes_,
+                              FunctionCoefficient &inflow, VectorCoefficient &velocity,
+                              ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction &submesh_vel, int exec_mode_) :
+   Subcell_FE_Evolution(fes_, subcell_fes_, inflow, velocity, M, x0_, mesh_vel, submesh_vel, exec_mode_)
 {
-   umin.SetSize(lumpedmassmatrix.Size());
-   umax.SetSize(lumpedmassmatrix.Size());
-   udot.SetSize(lumpedmassmatrix.Size());
 }
 
-void Convex_ClipAndScale::ComputeBounds(const Vector &u, Array<double> &u_min,
-                                 Array<double> &u_max) const
-{
-   // iterate over local number of dofs on this processor and compute maximum and minimum over local stencil
-   for (int i = 0; i < fes.GetVSize(); i++)
-   {
-      umin[i] = u(i);
-      umax[i] = u(i);
-
-      for (int k = I[i]; k < I[i+1]; k++)
-      {
-         int j = J[k];
-         umin[i] = min(umin[i], u(j));
-         umax[i] = max(umax[i], u(j));
-      }
-   }
-
-   // Distribute min and max to get max and min of local stencil of shared dofs
-   gcomm.Reduce<double>(umax, GroupCommunicator::Max);
-   gcomm.Bcast(umax);
-
-   gcomm.Reduce<double>(umin, GroupCommunicator::Min);
-   gcomm.Bcast(umin);
-}
-
-void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
+void Subcell_LowOrder::Mult(const Vector &x, Vector &y) const
 {
      
     if(remap)
@@ -44,6 +16,7 @@ void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
         // since v_gf has is multiplied with -1 for the convection integrator to have the correct direction
         double mt = - t;
         add(x0, mt, v_gf, x_now);
+        add(x0_sub, mt, vsub_gf, xsub_now);
 
         lumpedM.BilinearForm::operator=(0.0);
         lumpedM.Assemble();
@@ -57,21 +30,23 @@ void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
     y = 0.0;
 
     // compute low-order time derivative for high-order stabilization and local bounds
-    ComputeLOTimeDerivatives(x, udot);
+    //ComputeLOTimeDerivatives(x, udot);
     //udot = 0.0;
-    ComputeBounds(x, umin, umax);
+   //ComputeBounds(x, umin, umax);
 
    Array<int> dofs;
    for (int e = 0; e < fes.GetNE(); e++)
    {
       auto element = fes.GetFE(e);
       auto eltrans = fes.GetElementTransformation(e);
+      fes.GetElementDofs(e, dofs);
 
       // assemble element mass and convection matrices
       conv->AssembleElementMatrix(*element, *eltrans, Ke);
+      SparseMatrix Ke_tilde(dofs.Size());
+      BuildSubcellElementMatrix(e, Ke_tilde);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
 
-      fes.GetElementDofs(e, dofs);
       ue.SetSize(dofs.Size());
       re.SetSize(dofs.Size());
       udote.SetSize(dofs.Size());
@@ -81,12 +56,12 @@ void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
       ue_bar.SetSize(dofs.Size());
          
       x.GetSubVector(dofs, ue);
-      udot.GetSubVector(dofs, udote);
          
       re = 0.0;
       fe = 0.0;
       gammae = 0.0;
       ue_bar = 0.0;
+      /*
       for (int i = 0; i < dofs.Size(); i++)
       {
          for (int j = 0; j < i; j++)
@@ -114,10 +89,105 @@ void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
             fe(j) -= fije;
          }
       }
+      //*/
 
+      auto II = Ke_tilde.GetI();
+      auto JJ = Ke_tilde.GetJ();
+      auto KK = Ke_tilde.ReadData();
+
+      for(int i = 0; i < Ke_tilde.Height(); i++)
+      {
+         for(int k = II[i]; k < II[i+1]; k++)
+         {
+            int j = JJ[k];
+            if(j == 0 || j == 2)
+            {
+               //Ke_tilde(i,j) *= 4.0 / 3.0;
+            }
+            else if( j>3 && j < 8)
+            {
+               //Ke_tilde(i,j) *= 2.0 / 3.0;
+            }
+         }
+      }
+
+      Vector rowsums(Ke_tilde.Height());
+      Ke_tilde.GetRowSums(rowsums);
+      //MFEM_VERIFY(rowsums.Norml2() < 1e-15, "FUCK: " + to_string(rowsums.Norml2()));
+
+
+      for (int i = 0; i < Ke_tilde.Height(); i++)
+      {  
+         for(int k = II[i]; k < II[i+1]; k++)
+         {
+            int j = JJ[k];
+            MFEM_VERIFY(abs(KK[k] - Ke_tilde(i,j)) < 1e-15, "index wrong in sparsity pattern" )
+            if( j >= i){continue;}
+            double dije_tilde = max(max(KK[k], Ke_tilde(j,i)), 0.0);
+            double diffusion = dije_tilde * (ue(j) - ue(i));
+            re(i) += diffusion;
+            re(j) -= diffusion;
+         }
+
+      }
       // add convective term
-      Ke.AddMult(ue, re, -1.0);
+      //re = 0.0;
+      Ke_tilde.AddMult(ue, re, -1.0);
 
+      /*
+
+      Vector columnsums(dofs.Size());
+      Vector ones = columnsums;
+      ones = 1.0;
+
+   
+
+      Ke_tilde.MultTranspose(ones, columnsums);
+      Ke.AddMultTranspose(ones, columnsums, -1.0);
+      if(columnsums.Norml2() < 1e-14)
+      {
+         //cout << "There is still hope in this world" << endl;
+         //cout << ".";
+         //MFEM_ABORT("jo nice")
+      }
+      else
+      {
+         //cout << columnsums.Norml2() << " No hope?" << endl;
+         if(fes.GetMesh()->Dimension() == 1)
+         {
+            MFEM_ABORT("Collumnsum not zero: " + to_string(columnsums.Norml2()))
+         }
+         else if( true)
+         {
+
+            cout <<"schade: "<< columnsums.Norml2() <<endl;
+            columnsums.Print();
+            cout << endl;
+            Ke_tilde.MultTranspose(ones, columnsums);
+
+            columnsums.Print();
+            cout << endl;
+            Ke.MultTranspose(ones, columnsums);
+            columnsums.Print();  
+
+            cout <<"-----------" << endl;
+
+         }
+         //cout << "/";
+      }
+      //*/
+      //cout << columnsums.Norml2() << endl;
+      //MFEM_VERIFY(columnsums.Norml2() < 1e-15, "not mass conserving")
+      //Ke_tilde.MultTranspose(ones, columnsums);
+      //columnsums.Print();
+      //cout << endl;
+
+      //Ke.MultTranspose(ones, columnsums);
+      //columnsums.Print();
+      
+
+      //cout << "----------------------" << endl;
+      /*
       gammae *= 2.0;
 
       double P_plus = 0.0;
@@ -152,7 +222,8 @@ void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
          }
       }
       // add limited antidiffusive fluxes to element contribution and add to global vector
-      re += fe_star;
+      //re += fe_star;
+      //*/
       y.AddElementVector(dofs, re);
    }
 
@@ -168,8 +239,10 @@ void Convex_ClipAndScale::Mult(const Vector &x, Vector &y) const
 
    // apply inverse lumped mass matrix
    y /= lumpedmassmatrix;
+
+   //MFEM_ABORT("");
 }
 
 
-Convex_ClipAndScale::~Convex_ClipAndScale()
+Subcell_LowOrder::~Subcell_LowOrder()
 { }
