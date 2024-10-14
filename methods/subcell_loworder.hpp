@@ -8,9 +8,9 @@ class Subcell_LowOrder : public Subcell_FE_Evolution
 private:
 
 public:
-   Subcell_LowOrder(ParFiniteElementSpace &fes_, ParFiniteElementSpace &subcell_fes_,
+   Subcell_LowOrder(ParFiniteElementSpace &fes_, ParFiniteElementSpace *subcell_fes_,
                    FunctionCoefficient &inflow, VectorCoefficient &velocity,
-                   ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction &submesh_vel, int exec_mode_);
+                   ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction *submesh_vel, int exec_mode_);
 
    virtual void Mult(const Vector &x, Vector &y) const override;
 

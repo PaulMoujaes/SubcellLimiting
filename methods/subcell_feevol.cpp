@@ -1,15 +1,20 @@
 #include "subcell_feevol.hpp"
 
-Subcell_FE_Evolution::Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFiniteElementSpace &subcell_fes_,
+Subcell_FE_Evolution::Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFiniteElementSpace *subcell_fes_,
                               FunctionCoefficient &inflow, VectorCoefficient &velocity,
-                              ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction &submesh_vel, int exec_mode_) :
+                              ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction *submesh_vel, int exec_mode_) :
                               FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel, exec_mode_),
-                              xsub_now(*subcell_fes_.GetMesh()->GetNodes()), subcell_fes(subcell_fes_), x0_sub(*subcell_fes_.GetMesh()->GetNodes()),  vsub_gf(submesh_vel)
+                              subcell_fes(subcell_fes_),  vsub_gf(submesh_vel), xsub_now(NULL) //, x0_sub(*subcell_fes_->GetMesh()->GetNodes())
 
 {
+   if(remap)
+   {
+      xsub_now = subcell_fes_->GetMesh()->GetNodes();
+      x0_sub = *subcell_fes_->GetMesh()->GetNodes();
+   }  
    /*
    FiniteElementSpace dfes(fes.GetMesh(), fes.FEColl(), fes.GetMesh()->Dimension());
-   FiniteElementSpace dfes_sub(subcell_fes.GetMesh(), subcell_fes.FEColl(), subcell_fes.GetMesh()->Dimension());
+   FiniteElementSpace dfes_sub(subcell_fes->GetMesh(), subcell_fes->FEColl(), subcell_fes->GetMesh()->Dimension());
    MixedBilinearForm k_s(&dfes_sub, &subcell_fes);
    MixedBilinearForm k(&dfes, &fes);
 
@@ -42,18 +47,18 @@ Subcell_FE_Evolution::Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFinit
 
    //MFEM_ABORT("")
 
-   subcell_fes.GetMesh()->GetRefinementTransforms().MakeCoarseToFineTable(coarse_to_fine, true);
+   subcell_fes->GetMesh()->GetRefinementTransforms().MakeCoarseToFineTable(coarse_to_fine, true);
 
    Array<int> dofs, subcell_dofs, subcell_el;
    fes.GetElementDofs(0, dofs);
    coarse_to_fine.GetRow(0, subcell_el);
-   subcell_fes.GetElementDofs(subcell_el[0], subcell_dofs);
+   subcell_fes->GetElementDofs(subcell_el[0], subcell_dofs);
    dofs2subcelldofs.SetSize(subcell_el.Size());
 
    for(int el = 0; el < subcell_el.Size(); el++)
    {
       int e = subcell_el[el];
-      subcell_fes.GetElementDofs(e, subcell_dofs);
+      subcell_fes->GetElementDofs(e, subcell_dofs);
       dofs2subcelldofs[el] = new Array<int>(subcell_dofs.Size());
 
       for(int i = 0; i < subcell_dofs.Size(); i++)
@@ -130,8 +135,8 @@ void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &
    for(int el = 0; el < subcell_el.Size(); el++)
    {
       int es = subcell_el[el];
-      auto element = subcell_fes.GetFE(es);
-      auto eltrans = subcell_fes.GetElementTransformation(es);
+      auto element = subcell_fes->GetFE(es);
+      auto eltrans = subcell_fes->GetElementTransformation(es);
 
       
       // assemble convection matrix on subcell
@@ -140,7 +145,7 @@ void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &
 
       Ke_tilde.AddSubMatrix(subcell_dofs, subcell_dofs, Kse, 0);
       Array<int> subcell_dofs2;
-      subcell_fes.GetElementDofs(es, subcell_dofs2);
+      subcell_fes->GetElementDofs(es, subcell_dofs2);
 
       for(int i = 0; i < subcell_dofs.Size(); i++)
       {

@@ -5,6 +5,7 @@
 #include "convex_clipandscale.hpp"
 #include "clipandscale.hpp"
 #include "subcell_loworder.hpp"
+#include "subcell_clipandscale.hpp"
 
 
 

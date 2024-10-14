@@ -7,10 +7,10 @@ class Subcell_FE_Evolution : public FE_Evolution
 {
 protected:
    // Vector &vsub_gf;
-   Vector &xsub_now;
-   ParGridFunction &vsub_gf;
-   const Vector x0_sub;
-   ParFiniteElementSpace &subcell_fes;
+   Vector *xsub_now;
+   ParGridFunction *vsub_gf;
+   Vector x0_sub;
+   ParFiniteElementSpace *subcell_fes;
    //VectorGridFunctionCoefficient v_subcellmesh_coeff;
    Table coarse_to_fine;
    Array< Array<int>* > dofs2subcelldofs;
@@ -20,9 +20,9 @@ protected:
    //mutable SparseMatrix Ke_tilde;
 
 public:
-   Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFiniteElementSpace &subcell_fes_,
+   Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFiniteElementSpace *subcell_fes_,
                    FunctionCoefficient &inflow, VectorCoefficient &velocity,
-                   ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction &submesh_vel, int exec_mode_);
+                   ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction *submesh_vel, int exec_mode_);
 
    virtual void ComputeHOTimeDerivatives(const Vector &u, Vector &udot) const; 
 

@@ -330,7 +330,9 @@ int main(int argc, char *argv[])
             break;  
         case 2: met = new Convex_ClipAndScale(*pfes, inflow, velocity, *m, x0, v_gf, exec_mode);
             break;
-        case 3: met = new Subcell_LowOrder(*pfes, *pfes_sub, inflow, velocity, *m, x0, v_gf, *v_sub_gf, exec_mode);
+        case 3: met = new Subcell_LowOrder(*pfes, pfes_sub, inflow, velocity, *m, x0, v_gf, v_sub_gf, exec_mode);
+            break;
+        case 4: met = new Subcell_ClipAndScale(*pfes, pfes_sub, inflow, velocity, *m, x0, v_gf, v_sub_gf, exec_mode);
             break;
         default:
             MFEM_ABORT("Unkown scheme!");
