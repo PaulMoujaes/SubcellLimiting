@@ -4,48 +4,19 @@ Subcell_FE_Evolution::Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFinit
                               FunctionCoefficient &inflow, VectorCoefficient &velocity,
                               ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction *submesh_vel, int exec_mode_) :
                               FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel, exec_mode_),
-                              subcell_fes(subcell_fes_),  vsub_gf(submesh_vel), xsub_now(NULL) //, x0_sub(*subcell_fes_->GetMesh()->GetNodes())
+                              subcell_fes(subcell_fes_),  vsub_gf(submesh_vel), xsub_now(NULL), v_GFE(&fes_) //, x0_sub(*subcell_fes_->GetMesh()->GetNodes())
 
 {
    if(remap)
    {
       xsub_now = subcell_fes_->GetMesh()->GetNodes();
       x0_sub = *subcell_fes_->GetMesh()->GetNodes();
-   }  
-   /*
-   FiniteElementSpace dfes(fes.GetMesh(), fes.FEColl(), fes.GetMesh()->Dimension());
-   FiniteElementSpace dfes_sub(subcell_fes->GetMesh(), subcell_fes->FEColl(), subcell_fes->GetMesh()->Dimension());
-   MixedBilinearForm k_s(&dfes_sub, &subcell_fes);
-   MixedBilinearForm k(&dfes, &fes);
-
-   k_s.AddDomainIntegrator(new VectorDivergenceIntegrator ());
-   k.AddDomainIntegrator(new VectorDivergenceIntegrator ());
-
-   div_int = new VectorDivergenceIntegrator();
-
-   k_s.Assemble();
-   k_s.Finalize(0);
-
-   k.Assemble();
-   k.Finalize(0);
-
-   Vector sums(k.Width());
-   Vector ones(k.Height());
-   ones = 1.0;
-
-   k.MultTranspose(ones, sums);
-   k_s.AddMultTranspose(ones, sums, -1.0);
-
-   MFEM_VERIFY(k.Height() == k_s.Height(), "not same hight");
-   MFEM_VERIFY(k.Width() == k_s.Width(), "not same Width");
-
-   cout << k.Height() << " x " << k.Width() << endl;
-   
-
-   cout << sums.Norml2() << endl;
-   //*/
-
-   //MFEM_ABORT("")
+      v_GFE.ProjectCoefficient(v_mesh_coeff);
+   } 
+   else
+   {
+      v_GFE.ProjectCoefficient(velocity);
+   }
 
    subcell_fes->GetMesh()->GetRefinementTransforms().MakeCoarseToFineTable(coarse_to_fine, true);
 
@@ -124,6 +95,40 @@ void Subcell_FE_Evolution::ComputeHOTimeDerivatives(const Vector &u,
    udot /= lumpedmassmatrix;
 }
 
+void Subcell_FE_Evolution::BuildSubcellDivElementMatrix(const int e, SparseMatrix &Ce_tilde) const
+{
+   int dim = fes.GetMesh()->Dimension();
+   Ce_tilde = 0.0;
+   Array<int> dofs, subcell_el;
+   fes.GetElementDofs(e, dofs);
+   Ce_tilde.OverrideSize(dofs.Size(), dim * dofs.Size());
+   coarse_to_fine.GetRow(e, subcell_el);
+
+   for(int el = 0; el < subcell_el.Size(); el++)
+   {
+      int es = subcell_el[el];
+      auto element = subcell_fes->GetFE(es);
+      auto eltrans = subcell_fes->GetElementTransformation(es);
+
+      sdiv_int.AssembleElementMatrix(*element, *eltrans, Cse);
+
+      Array<int> subcell_dofs = *dofs2subcelldofs[el];
+      Array<int> subcell_vdofs(dim * subcell_dofs.Size());
+
+      for(int d = 0; d < dim; d++)
+      {
+         for(int i = 0; i < subcell_dofs.Size(); i++)
+         {
+            subcell_vdofs[i + d * subcell_dofs.Size()] = subcell_dofs[i] + d * subcell_dofs.Size();
+         }
+      }
+
+      Ce_tilde.AddSubMatrix(subcell_dofs, subcell_vdofs, Cse, 0);
+
+   }
+   Ce_tilde.Finalize(0);
+}
+
 void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &Ke_tilde) const
 {  
    Ke_tilde = 0.0;
@@ -144,6 +149,8 @@ void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &
       Array<int> subcell_dofs = *dofs2subcelldofs[el];
 
       Ke_tilde.AddSubMatrix(subcell_dofs, subcell_dofs, Kse, 0);
+
+      /*
       Array<int> subcell_dofs2;
       subcell_fes->GetElementDofs(es, subcell_dofs2);
 
@@ -154,6 +161,7 @@ void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &
          MFEM_VERIFY(subcell_dofs2[i] == dofs[subcell_dofs[i]], "subcell dofs to dofs wrong in element " + to_string(e) + " on rank " + to_string(rank));
          //cout << "jupp" << endl;
       }
+      //*/
    }
    Ke_tilde.Finalize(0);
 }

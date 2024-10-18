@@ -129,6 +129,9 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       Ke_tilde.AddMult(ue, fe, 1.0);
       Ke.AddMult(ue, fe, -1.0);
 
+      //Ke_tilde.AddMultTranspose(ue, fe, -0.5);
+      //Ke.AddMultTranspose(ue, fe, 0.5);
+
       // add convective term
       Ke_tilde.AddMult(ue, re, -1.0);
 

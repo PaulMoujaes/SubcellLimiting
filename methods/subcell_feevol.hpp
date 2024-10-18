@@ -15,8 +15,12 @@ protected:
    Table coarse_to_fine;
    Array< Array<int>* > dofs2subcelldofs;
 
-   mutable DenseMatrix Kse;
-   mutable VectorDivergenceIntegrator *div_int;
+   mutable VectorDivergenceIntegrator div_int;
+   mutable VectorDivergenceIntegrator sdiv_int;
+   mutable ParGridFunction v_GFE;
+
+   mutable DenseMatrix Kse, Cse;
+   //mutable VectorDivergenceIntegrator *div_int;
    //mutable SparseMatrix Ke_tilde;
 
 public:
@@ -29,6 +33,7 @@ public:
    virtual void Mult(const Vector &x, Vector &y) const = 0;
 
    virtual void BuildSubcellElementMatrix(const int e, SparseMatrix &Ke_tilde) const;
+   virtual void BuildSubcellDivElementMatrix(const int e, SparseMatrix &Ce_tilde) const;
 
    virtual ~Subcell_FE_Evolution();
 };
