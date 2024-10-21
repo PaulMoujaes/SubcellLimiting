@@ -4,9 +4,12 @@ Subcell_FE_Evolution::Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFinit
                               FunctionCoefficient &inflow, VectorCoefficient &velocity,
                               ParBilinearForm &M, const Vector &x0_, ParGridFunction &mesh_vel, ParGridFunction *submesh_vel, int exec_mode_) :
                               FE_Evolution(fes_, inflow, velocity, M, x0_, mesh_vel, exec_mode_),
-                              subcell_fes(subcell_fes_),  vsub_gf(submesh_vel), xsub_now(NULL), v_GFE(&fes_) //, x0_sub(*subcell_fes_->GetMesh()->GetNodes())
+                              subcell_fes(subcell_fes_),  vsub_gf(submesh_vel), xsub_now(NULL), dfes(NULL)//, v_GFE(&fes_) //, x0_sub(*subcell_fes_->GetMesh()->GetNodes())
 
 {
+   H1_FECollection fec(fes.GetFE(0)->GetOrder(), fes.GetParMesh()->Dimension(), BasisType::ClosedUniform);
+   dfes = new ParFiniteElementSpace(fes.GetParMesh(), &fec, fes.GetParMesh()->Dimension());//fes.FEColl()
+   v_GFE.SetSpace(dfes);
    if(remap)
    {
       xsub_now = subcell_fes_->GetMesh()->GetNodes();
@@ -15,8 +18,11 @@ Subcell_FE_Evolution::Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFinit
    } 
    else
    {
+      cout << "no remap " << endl;
       v_GFE.ProjectCoefficient(velocity);
    }
+
+   //v_GFE.Print();
 
    subcell_fes->GetMesh()->GetRefinementTransforms().MakeCoarseToFineTable(coarse_to_fine, true);
 
@@ -110,20 +116,20 @@ void Subcell_FE_Evolution::BuildSubcellDivElementMatrix(const int e, SparseMatri
       auto element = subcell_fes->GetFE(es);
       auto eltrans = subcell_fes->GetElementTransformation(es);
 
-      sdiv_int.AssembleElementMatrix(*element, *eltrans, Cse);
+      div_int.AssembleElementMatrix2(*element, *element, *eltrans, Cse);
 
       Array<int> subcell_dofs = *dofs2subcelldofs[el];
-      Array<int> subcell_vdofs(dim * subcell_dofs.Size());
+      Array<int> subcell_ddofs(dim * subcell_dofs.Size());
 
       for(int d = 0; d < dim; d++)
       {
          for(int i = 0; i < subcell_dofs.Size(); i++)
          {
-            subcell_vdofs[i + d * subcell_dofs.Size()] = subcell_dofs[i] + d * subcell_dofs.Size();
+            subcell_ddofs[i + d * subcell_dofs.Size()] = subcell_dofs[i] + d * dofs.Size();
          }
       }
 
-      Ce_tilde.AddSubMatrix(subcell_dofs, subcell_vdofs, Cse, 0);
+      Ce_tilde.AddSubMatrix(subcell_dofs, subcell_ddofs, Cse, 0);
 
    }
    Ce_tilde.Finalize(0);

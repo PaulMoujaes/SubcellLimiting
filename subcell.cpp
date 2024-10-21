@@ -151,7 +151,7 @@ int main(int argc, char *argv[])
         mesh_order = 1;
     }
 
-    H1_FECollection mesh_fec(mesh_order, dim, BasisType::GaussLobatto);
+    H1_FECollection mesh_fec(mesh_order, dim, BasisType::ClosedUniform);
 
     // Current mesh positions.
     ParFiniteElementSpace mesh_pfes(pmesh, &mesh_fec, dim);

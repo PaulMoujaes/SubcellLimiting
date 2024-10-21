@@ -37,7 +37,7 @@ void Subcell_ClipAndScale::ComputeBounds(const Vector &u, Array<double> &u_min,
 
 void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
 {
-     
+   const int dim = fes.GetMesh()->Dimension();
     if(remap)
     { 
         const double t = GetTime();
@@ -61,19 +61,34 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
    ComputeLOTimeDerivatives(x, udot);
    ComputeBounds(x, umin, umax);
 
-   Array<int> dofs;
+   Array<int> dofs, ddofs;
    for (int e = 0; e < fes.GetNE(); e++)
    {
+       
       auto element = fes.GetFE(e);
       auto eltrans = fes.GetElementTransformation(e);
       fes.GetElementDofs(e, dofs);
-
+       
       // assemble element mass and convection matrices
-      conv->AssembleElementMatrix(*element, *eltrans, Ke);
-      SparseMatrix Ke_tilde(dofs.Size());
-      BuildSubcellElementMatrix(e, Ke_tilde);
+      //conv->AssembleElementMatrix(*element, *eltrans, Ke);
+      div_int.AssembleElementMatrix2(*element, *element, *eltrans, Ce);
+      //SparseMatrix Ke_tilde(dofs.Size());
+      //BuildSubcellElementMatrix(e, Ke_tilde);
+      SparseMatrix Ce_tilde(dofs.Size(), dim * dofs.Size());
+      BuildSubcellDivElementMatrix(e, Ce_tilde);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
 
+      /*
+      for(int i = 0; i < Ce.Height(); i++)
+      {
+         for(int j = 0; j < Ce.Width(); j++)
+         {
+            MFEM_VERIFY(abs(Ce(i,j)-Ce_tilde(i,j)) < 1e-15, "subcell matrix and macro matrix not equal for  p1");
+         }
+      }
+      cout << "Ce_tilde passt" << endl;
+      //*/
+       
       ue.SetSize(dofs.Size());
       re.SetSize(dofs.Size());
       udote.SetSize(dofs.Size());
@@ -81,42 +96,72 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       fe_star.SetSize(dofs.Size());
       gammae.SetSize(dofs.Size());
       ue_bar.SetSize(dofs.Size());
-
+       
       x.GetSubVector(dofs, ue);
+      //MFEM_VERIFY(ue.Min() > -1e-15, "bernstein coefficients negative!")
       udot.GetSubVector(dofs, udote);
-         
+       
+      v_GFE.ParFESpace()->GetElementVDofs(e, ddofs);
+      ve.SetSize(ddofs.Size());
+      v_GFE.GetSubVector(ddofs, ve);
+      //ve = 1.0;
+       
       re = 0.0;
       fe = 0.0;
       gammae = 0.0;
       ue_bar = 0.0;
 
-      auto II = Ke_tilde.GetI();
-      auto JJ = Ke_tilde.GetJ();
-      auto KK = Ke_tilde.ReadData();
+      auto II = Ce_tilde.GetI();
+      auto JJ = Ce_tilde.GetJ();
+      auto CC = Ce_tilde.ReadData();
 
-      for (int i = 0; i < Ke_tilde.Height(); i++)
+      Vector vi(dim), vj(dim), cij_tilde(dim), cji_tilde(dim);
+      for (int i = 0; i < Ce_tilde.Height(); i++)
       {  
+         for(int d = 0; d < dim; d++)
+         {
+            vi(d) = ve(i + d * dofs.Size());
+         }
+
          for(int k = II[i]; k < II[i+1]; k++)
          {
             int j = JJ[k];
-            //MFEM_VERIFY(abs(KK[k] - Ke_tilde(i,j)) < 1e-15, "index wrong in sparsity pattern" )
+            MFEM_VERIFY(abs(CC[k] - Ce_tilde(i,j)) < 1e-15, "index wrong in sparsity pattern" )
             if( j >= i){continue;}
-            double kije_tilde = KK[k];
-            double kjie_tilde = Ke_tilde(j,i);
-            double dije_tilde = max(max(kije_tilde, kjie_tilde), 0.0);
-            double diffusion = dije_tilde * (ue(j) - ue(i));
+
+            for(int d = 0; d < dim; d++)
+            {
+               cij_tilde(d) = Ce_tilde(i, j + d * dofs.Size());
+               cji_tilde(d) = Ce_tilde(j, i + d * dofs.Size());
+               vj(d) = ve(j + d * dofs.Size());
+            }
+            //double kije_tilde = cij_tilde * vj;
+            //double kjie_tilde = cji_tilde * vi;
+            double cij_max = max(abs(cij_tilde * vj), abs(cij_tilde * vi));
+            double cji_max = max(abs(cji_tilde * vj), abs(cji_tilde * vi));
+            double dije_tilde = max(max(cij_max, cji_max), 0.0);
+            double diffusion =  dije_tilde * (ue(j) - ue(i));
+
+            MFEM_VERIFY(dije_tilde - cij_tilde * vj > -1e-15, "not enough diffusion 1");
+            MFEM_VERIFY(dije_tilde - cij_tilde * vi > -1e-15, "not enough diffusion 2");
+            // cout <<"ok " << endl;
+
 
             re(i) += diffusion;
             re(j) -= diffusion;
+            //vj.Print();
+            //vi.Print();
 
+            re(i) += - ( (cij_tilde * vj) * ue(j) - cij_tilde * vi * ue(i) );
+            re(j) += - ( (cji_tilde * vi) * ue(i) - cji_tilde * vj * ue(j) );
 
             // for bounding fluxes
             gammae(i) += dije_tilde;
             gammae(j) += dije_tilde;
              
             // add 2dije * uije and 2djie * ujie
-            ue_bar(i) += dije_tilde * (ue(i) + ue(j)) - kije_tilde * (ue(j) - ue(i));
-            ue_bar(j) += dije_tilde * (ue(j) + ue(i)) - kjie_tilde * (ue(i) - ue(j));
+            ue_bar(i) += dije_tilde * (ue(i) + ue(j)) - cij_tilde * vj * ue(j) + cij_tilde * vi * ue(i);
+            ue_bar(j) += dije_tilde * (ue(j) + ue(i)) - cji_tilde * vi * ue(i) + cji_tilde * vj * ue(j);
              
             // assemble raw antidifussive fluxes f_{i,e} = sum_j m_{ij,e} (udot_i - udot_j) - d_{ij,e} (u_i - u_j)
             // note fije = - fjie
@@ -126,14 +171,40 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
          }
       }
       // add terms for sparsity pattern correction
-      Ke_tilde.AddMult(ue, fe, 1.0);
-      Ke.AddMult(ue, fe, -1.0);
+      //Ke_tilde.AddMult(ue, fe, 1.0);
+      //Ke.AddMult(ue, fe, -1.0);
 
       //Ke_tilde.AddMultTranspose(ue, fe, -0.5);
       //Ke.AddMultTranspose(ue, fe, 0.5);
 
       // add convective term
-      Ke_tilde.AddMult(ue, re, -1.0);
+      //Vector aux = re;
+      Vector ve_ue = ve;
+      for(int i = 0; i < dofs.Size(); i++)
+      {
+         for(int d = 0; d < dim; d++)
+         {
+            ve_ue(i + d *dofs.Size()) *= ue(i);
+         }
+      }
+      //Ce.AddMult(ve_ue, re, -1.0);
+
+      bool print = false; 
+      for(int i = 0; i < dofs.Size(); i++)
+      {
+         if(re(i) < -1e-15)
+         {
+            print = true;
+            break;
+         }
+      }
+      if(re.Norml2() > 1e-15)
+      {
+         //cout << re.Norml2() << endl;
+         //cout << endl;
+      }
+      //Ce_tilde.Print();
+      //aux.Print();
 
       gammae *= 2.0;
 
@@ -169,7 +240,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
          }
       }
       // add limited antidiffusive fluxes to element contribution and add to global vector
-      re += fe_star;
+      //re += fe_star;
 
       //MFEM_VERIFY(abs(fe_star.Sum())< 1e-14, "hmm" );
       /*

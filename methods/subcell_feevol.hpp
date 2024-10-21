@@ -10,16 +10,17 @@ protected:
    Vector *xsub_now;
    ParGridFunction *vsub_gf;
    Vector x0_sub;
-   ParFiniteElementSpace *subcell_fes;
+   ParFiniteElementSpace *subcell_fes, *dfes;
    //VectorGridFunctionCoefficient v_subcellmesh_coeff;
    Table coarse_to_fine;
    Array< Array<int>* > dofs2subcelldofs;
 
    mutable VectorDivergenceIntegrator div_int;
-   mutable VectorDivergenceIntegrator sdiv_int;
+   //mutable VectorDivergenceIntegrator sdiv_int;
    mutable ParGridFunction v_GFE;
+   mutable Vector ve;
 
-   mutable DenseMatrix Kse, Cse;
+   mutable DenseMatrix Kse, Cse, Ce;
    //mutable VectorDivergenceIntegrator *div_int;
    //mutable SparseMatrix Ke_tilde;
 
