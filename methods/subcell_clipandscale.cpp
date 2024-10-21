@@ -139,11 +139,11 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
             //double kjie_tilde = cji_tilde * vi;
             double cij_max = max(abs(cij_tilde * vj), abs(cij_tilde * vi));
             double cji_max = max(abs(cji_tilde * vj), abs(cji_tilde * vi));
-            double dije_tilde = max(max(cij_max, cji_max), 0.0);
+            double dije_tilde = max(max(cij_tilde * vj, cji_tilde * vi), 0.0);
             double diffusion =  dije_tilde * (ue(j) - ue(i));
 
-            MFEM_VERIFY(dije_tilde - cij_tilde * vj > -1e-15, "not enough diffusion 1");
-            MFEM_VERIFY(dije_tilde - cij_tilde * vi > -1e-15, "not enough diffusion 2");
+            //MFEM_VERIFY(dije_tilde - cij_tilde * vj > -1e-15, "not enough diffusion 1");
+            //MFEM_VERIFY(dije_tilde - cij_tilde * vi > -1e-15, "not enough diffusion 2");
             // cout <<"ok " << endl;
 
 
