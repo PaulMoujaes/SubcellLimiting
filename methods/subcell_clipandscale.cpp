@@ -120,9 +120,15 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
              
             // assemble raw antidifussive fluxes f_{i,e} = sum_j m_{ij,e} (udot_i - udot_j) - d_{ij,e} (u_i - u_j)
             // note fije = - fjie
-            double fije = Me(i,j) * (udote(i) - udote(j)) - diffusion;
+            double fije = - diffusion;
             fe(i) += fije;
             fe(j) -= fije;
+         }
+         for(int j = 0; j < i; j++)
+         {
+            double mij = Me(i, j)* (udote(i) - udote(j));
+            fe(i) += mij;
+            fe(j) -= mij;
          }
       }
       // add terms for sparsity pattern correction
