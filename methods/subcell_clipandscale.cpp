@@ -173,28 +173,6 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       }
       // add limited antidiffusive fluxes to element contribution and add to global vector
       re += fe_star;
-
-      //MFEM_VERIFY(abs(fe_star.Sum())< 1e-14, "hmm" );
-      /*
-      if(abs(fe.Sum()) > 1e-15)
-      {
-         cout << "Target Scheme nicht masseerhaltend: " << fe.Sum() << endl;
-         if(abs(fe_star.Sum()) > 1e-15)
-         {
-            cout << "C&S nicht masseerhaltend: " << fe.Sum() << endl;
-            MFEM_ABORT("C&S nicht masseerhaltend")
-         }
-         else
-         {
-            cout << "C&S masseerhaltend " << endl;
-         }
-      }
-      if(fe.Norml2() > 1e-15)
-      {
-         cout << "vorher " << fe.Norml2() << endl;
-         cout << "nachher " << fe_star.Norml2() << "\n\n";
-      }
-      //*/
      
       y.AddElementVector(dofs, re);
    }
