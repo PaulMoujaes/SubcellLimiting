@@ -70,24 +70,11 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       fes.GetElementDofs(e, dofs);
        
       // assemble element mass and convection matrices
-      //conv->AssembleElementMatrix(*element, *eltrans, Ke);
+      conv->AssembleElementMatrix(*element, *eltrans, Ke);
       div_int.AssembleElementMatrix2(*element, *element, *eltrans, Ce);
-      //SparseMatrix Ke_tilde(dofs.Size());
-      //BuildSubcellElementMatrix(e, Ke_tilde);
       SparseMatrix Ce_tilde(dofs.Size(), dim * dofs.Size());
       BuildSubcellDivElementMatrix(e, Ce_tilde);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
-
-      /*
-      for(int i = 0; i < Ce.Height(); i++)
-      {
-         for(int j = 0; j < Ce.Width(); j++)
-         {
-            MFEM_VERIFY(abs(Ce(i,j)-Ce_tilde(i,j)) < 1e-15, "subcell matrix and macro matrix not equal for  p1");
-         }
-      }
-      cout << "Ce_tilde passt" << endl;
-      //*/
        
       ue.SetSize(dofs.Size());
       re.SetSize(dofs.Size());
@@ -115,7 +102,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       auto JJ = Ce_tilde.GetJ();
       auto CC = Ce_tilde.ReadData();
 
-      Vector vi(dim), vj(dim), cij_tilde(dim), cji_tilde(dim);
+      Vector vi(dim), vj(dim), cij_tilde(dim), cji_tilde(dim), cij(dim), cji(dim);
       for (int i = 0; i < Ce_tilde.Height(); i++)
       {  
          for(int d = 0; d < dim; d++)
@@ -135,76 +122,63 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
                cji_tilde(d) = Ce_tilde(j, i + d * dofs.Size());
                vj(d) = ve(j + d * dofs.Size());
             }
-            //double kije_tilde = cij_tilde * vj;
-            //double kjie_tilde = cji_tilde * vi;
+
             double cij_max = max(abs(cij_tilde * vj), abs(cij_tilde * vi));
             double cji_max = max(abs(cji_tilde * vj), abs(cji_tilde * vi));
             double dije_tilde = max(max(cij_tilde * vj, cji_tilde * vi), 0.0);
-            double diffusion =  dije_tilde * (ue(j) - ue(i));
-
-            //MFEM_VERIFY(dije_tilde - cij_tilde * vj > -1e-15, "not enough diffusion 1");
-            //MFEM_VERIFY(dije_tilde - cij_tilde * vi > -1e-15, "not enough diffusion 2");
-            // cout <<"ok " << endl;
-
+            double diffusion = dije_tilde * (ue(j) - ue(i));
 
             re(i) += diffusion;
             re(j) -= diffusion;
-            //vj.Print();
-            //vi.Print();
 
-            re(i) += - ( (cij_tilde * vj) * ue(j) - cij_tilde * vi * ue(i) );
-            re(j) += - ( (cji_tilde * vi) * ue(i) - cji_tilde * vj * ue(j) );
+            re(i) -= ( (cij_tilde * vj) * ue(j) - (cij_tilde * vi) * ue(i) );
+            re(j) -= ( (cji_tilde * vi) * ue(i) - (cji_tilde * vj) * ue(j) );
 
             // for bounding fluxes
             gammae(i) += dije_tilde;
             gammae(j) += dije_tilde;
              
             // add 2dije * uije and 2djie * ujie
-            ue_bar(i) += dije_tilde * (ue(i) + ue(j)) - cij_tilde * vj * ue(j) + cij_tilde * vi * ue(i);
-            ue_bar(j) += dije_tilde * (ue(j) + ue(i)) - cji_tilde * vi * ue(i) + cji_tilde * vj * ue(j);
+            ue_bar(i) += dije_tilde * (ue(i) + ue(j)) - ( (cij_tilde * vj) * ue(j) - (cij_tilde * vi) * ue(i) );
+            ue_bar(j) += dije_tilde * (ue(j) + ue(i)) - ( (cji_tilde * vi) * ue(i) - (cji_tilde * vj) * ue(j) );
              
             // assemble raw antidifussive fluxes f_{i,e} = sum_j m_{ij,e} (udot_i - udot_j) - d_{ij,e} (u_i - u_j)
             // note fije = - fjie
-            double fije = Me(i,j) * (udote(i) - udote(j)) - diffusion;
+            double fije = - diffusion; // Me(i,j) * (udote(i) - udote(j))
             fe(i) += fije;
             fe(j) -= fije;
          }
-      }
-      // add terms for sparsity pattern correction
-      //Ke_tilde.AddMult(ue, fe, 1.0);
-      //Ke.AddMult(ue, fe, -1.0);
 
-      //Ke_tilde.AddMultTranspose(ue, fe, -0.5);
-      //Ke.AddMultTranspose(ue, fe, 0.5);
+         DenseMatrix Cd_tilde;
+         Ce_tilde.ToDenseMatrix(Cd_tilde);
 
-      // add convective term
-      //Vector aux = re;
-      Vector ve_ue = ve;
-      for(int i = 0; i < dofs.Size(); i++)
-      {
-         for(int d = 0; d < dim; d++)
+         for(int j = 0; j < dofs.Size(); j++)
          {
-            ve_ue(i + d *dofs.Size()) *= ue(i);
-         }
-      }
-      //Ce.AddMult(ve_ue, re, -1.0);
+            for(int d = 0; d < dim; d++)
+            {
+               cij_tilde(d) = Cd_tilde(i, j + d * dofs.Size());
+               cij(d) = Ce(i, j + d * dofs.Size());
+               cji(d) = Ce(j, i + d * dofs.Size());
+               vj(d) = ve(j + d * dofs.Size());
+            }
 
-      bool print = false; 
-      for(int i = 0; i < dofs.Size(); i++)
-      {
-         if(re(i) < -1e-15)
-         {
-            print = true;
-            break;
+            fe(i) += Me(i,j) * (udote(i) - udote(j))+ ( (cij_tilde * vj) - (cij * vj) ) * ue(j) - (cji * vj) * ue(j);
+
          }
-      }
-      if(re.Norml2() > 1e-15)
+      }  
+      //conv->AssembleElementMatrix(*element, *eltrans, Ke);
+      Ke.AddMultTranspose(ue, fe);
+
+      /*
+      if (abs(fe.Sum()) > 1e-15)
       {
-         //cout << re.Norml2() << endl;
-         //cout << endl;
+         cout << fe.Sum() << endl;
       }
-      //Ce_tilde.Print();
-      //aux.Print();
+      else
+      {
+         cout << "ok" << endl;
+      }
+      //*/ 
 
       gammae *= 2.0;
 
@@ -214,10 +188,11 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       //Clip
       for (int i = 0; i < dofs.Size(); i++)
       {
-         
          // bounding fluxes to enforce u_i = u_i_min => du/dt >= 0 and vise versa for u_i = u_i_max         
-         double fie_max = gammae(i) * umax[dofs[i]] - ue_bar(i);
-         double fie_min = gammae(i) * umin[dofs[i]] - ue_bar(i);
+         double fie_max = gammae(i) * (umax[dofs[i]]) - ue_bar(i); //ue_bar(i);
+         double fie_min = gammae(i) * (umin[dofs[i]]) - ue_bar(i); //ue_bar(i);
+         fie_max = max(0.0, fie_max);
+         fie_min = min(0.0, fie_min);
          
          fe_star(i) = min(max(fie_min, fe(i)), fie_max);
 
@@ -240,33 +215,9 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
          }
       }
       // add limited antidiffusive fluxes to element contribution and add to global vector
-      //re += fe_star;
-
-      //MFEM_VERIFY(abs(fe_star.Sum())< 1e-14, "hmm" );
-      /*
-      if(abs(fe.Sum()) > 1e-15)
-      {
-         cout << "Target Scheme nicht masseerhaltend: " << fe.Sum() << endl;
-         if(abs(fe_star.Sum()) > 1e-15)
-         {
-            cout << "C&S nicht masseerhaltend: " << fe.Sum() << endl;
-            MFEM_ABORT("C&S nicht masseerhaltend")
-         }
-         else
-         {
-            cout << "C&S masseerhaltend " << endl;
-         }
-      }
-      if(fe.Norml2() > 1e-15)
-      {
-         cout << "vorher " << fe.Norml2() << endl;
-         cout << "nachher " << fe_star.Norml2() << "\n\n";
-      }
-      //*/
-     
+      re += fe_star;     
       y.AddElementVector(dofs, re);
    }
-   //MFEM_ABORT("alles ok")
 
    // add boundary condition (u - u_inflow) * b
    //subtract(x, u_inflow, z);
@@ -280,8 +231,6 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
 
    // apply inverse lumped mass matrix
    y /= lumpedmassmatrix;
-
-   //MFEM_ABORT("");
 }
 
 

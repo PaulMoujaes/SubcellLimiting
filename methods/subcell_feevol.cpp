@@ -18,7 +18,6 @@ Subcell_FE_Evolution::Subcell_FE_Evolution(ParFiniteElementSpace &fes_, ParFinit
    } 
    else
    {
-      cout << "no remap " << endl;
       v_GFE.ProjectCoefficient(velocity);
    }
 
