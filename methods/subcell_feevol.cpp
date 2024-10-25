@@ -124,6 +124,108 @@ void Subcell_FE_Evolution::ComputeHOTimeDerivatives(const Vector &u,
    udot /= lumpedmassmatrix;
 }
 
+void Subcell_FE_Evolution::AdjustSubcellElementMatrix(const DenseMatrix &Ke, SparseMatrix &Ke_tilde) const
+{
+   DenseMatrix K;
+   Ke_tilde.ToDenseMatrix(K);
+   DenseMatrix Kt = K;
+   Kt = 0.0;
+
+   for(int i = 0; i < K.Height(); i++)
+   {
+      for(int j = 0; j < K.Height(); j++)
+      {
+         Kt(i,j) = K(j,i);
+      }
+   }
+
+   Vector ones(Ke.Height());
+   ones = 1.0;
+   Vector collumnsums(ones.Size()), a(ones.Size()), alpha(ones.Size());
+
+   GMRESSolver bcg;
+   bcg.SetOperator(Kt);
+   Ke.MultTranspose(ones, collumnsums);
+   bcg.SetAbsTol(1e-30);
+   //bcg.SetPrintLevel(1);
+   bcg.SetMaxIter(100);
+   bcg.Mult(collumnsums, a);
+
+   //add(a, 1.0 - a(0), ones, alpha);
+   alpha = a;
+
+   Ke_tilde.AddMultTranspose(a, collumnsums, -1.0);
+ 
+
+   //alpha.Print();
+   //cout << " >>>>>>>>>>>>>>>> <<<<<<<<<<<<<<<<<" <<  endl;
+   
+
+   /*
+   alpha.Print();
+   MFEM_ABORT("hmm")
+
+   for(int i = 0; i < Kt.Width(); i++)
+   {
+      if(abs(collumnsums(i)) < 1e-15)
+      {
+         for(int j = 0; j < Kt.Height(); j++)
+         {
+            Kt(j,i) = 0.0;
+         }
+         //collumnsums(i) = 1.0;
+         Kt(i,i) = 1.0;
+         break;
+      }
+   }
+   Kt.Print();
+   Kt.Invert();
+   Kt.Print();
+   MFEM_ABORT("")
+   Kt.MultTranspose(collumnsums, alpha);
+   MFEM_VERIFY(alpha.Norml2() > 1e-15, "alpha = 0");
+   
+   Vector aux = alpha;
+   Ke_tilde.MultTranspose(alpha, aux);
+   aux -= collumnsums;
+   cout << "|ktilde alpha| = " <<aux.Norml2() << endl;
+   aux.Print();
+   cout << "---" << endl;
+
+   Ke.MultTranspose(ones, collumnsums);
+   Vector collumnsums2 = collumnsums;
+   Ke_tilde.MultTranspose(ones, collumnsums2);
+   collumnsums2 -= collumnsums;
+   //double init = collumnsums.Norml2();
+
+   //Ke_tilde.AddMultTranspose(ones, collumnsums, 1.0);
+
+   //*/
+
+   auto I = Ke_tilde.GetI();
+   auto J = Ke_tilde.GetJ();
+   auto KK = Ke_tilde.ReadWriteData();
+
+   for(int i = 0; i < Ke_tilde.Height(); i++)
+   {
+      for(int k = I[i]; k < I[i+1]; k++)
+      {
+         KK[k] *= alpha(i);
+      }
+   }
+
+   //Vector collumnsums3 = collumnsums;
+   //Ke_tilde.MultTranspose(ones, collumnsums3);
+   //collumnsums3 -= collumnsums;
+   //collumnsums2.Print();
+   //collumnsums3.Print();
+
+   //MFEM_VERIFY(collumnsums.Norml2() < 1e-13, to_string(collumnsums.Norml2()) );
+   //cout << endl;
+   //cout << "LETSGOO" << endl;
+
+}
+
 void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &Ke_tilde) const
 {  
    Ke_tilde = 0.0;
@@ -157,6 +259,8 @@ void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &
    }
    Ke_tilde.Finalize(0);
 }
+
+
 
 Subcell_FE_Evolution::~Subcell_FE_Evolution()
 { }

@@ -72,6 +72,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       conv->AssembleElementMatrix(*element, *eltrans, Ke);
       SparseMatrix Ke_tilde(dofs.Size());
       BuildSubcellElementMatrix(e, Ke_tilde);
+      //AdjustSubcellElementMatrix(Ke, Ke_tilde);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
 
       ue.SetSize(dofs.Size());
@@ -135,6 +136,11 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       Ke_tilde.AddMult(ue, fe, 1.0);
       Ke.AddMult(ue, fe, -1.0);
 
+      if(abs(fe.Sum()) > 1e-14)
+      {
+         //cout << fe.Sum() << endl;
+      }
+      
       // add convective term
       Ke_tilde.AddMult(ue, re, -1.0);
 
@@ -190,8 +196,6 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
 
    // apply inverse lumped mass matrix
    y /= lumpedmassmatrix;
-
-   //MFEM_ABORT("");
 }
 
 
