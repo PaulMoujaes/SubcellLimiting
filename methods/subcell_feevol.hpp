@@ -29,6 +29,9 @@ public:
    virtual void Mult(const Vector &x, Vector &y) const = 0;
 
    virtual void BuildSubcellElementMatrix(const int e, SparseMatrix &Ke_tilde) const;
+   
+   virtual void BuildSubcellElementMatrix2(const int e, const DenseMatrix &Ke, SparseMatrix &Ke_tilde) const;
+   virtual void BuildSubcellMasstMatrix(const int e, SparseMatrix &Me_tilde) const;
 
    virtual void AdjustSubcellElementMatrix(const DenseMatrix &Ke, SparseMatrix &Ke_tilde) const;
 

@@ -71,7 +71,8 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       // assemble element mass and convection matrices
       conv->AssembleElementMatrix(*element, *eltrans, Ke);
       SparseMatrix Ke_tilde(dofs.Size());
-      BuildSubcellElementMatrix(e, Ke_tilde);
+      //BuildSubcellElementMatrix(e, Ke_tilde);
+      BuildSubcellElementMatrix2(e, Ke, Ke_tilde);
       //AdjustSubcellElementMatrix(Ke, Ke_tilde);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
 
@@ -178,7 +179,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
          }
       }
       // add limited antidiffusive fluxes to element contribution and add to global vector
-      re += fe_star;
+      //re += fe_star;
      
       y.AddElementVector(dofs, re);
    }

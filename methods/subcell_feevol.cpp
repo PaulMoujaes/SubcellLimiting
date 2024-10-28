@@ -226,6 +226,106 @@ void Subcell_FE_Evolution::AdjustSubcellElementMatrix(const DenseMatrix &Ke, Spa
 
 }
 
+
+void Subcell_FE_Evolution::BuildSubcellElementMatrix2(const int e, const DenseMatrix &Ke, SparseMatrix &Ke_tilde) const
+{
+   const int dim = fes.GetMesh()->Dimension();
+   const int ndofs = Ke.Height();
+   SparseMatrix Me_tilde(ndofs, ndofs);
+   BuildSubcellMasstMatrix(e, Me_tilde);
+
+   Ke_tilde.OverrideSize(ndofs, ndofs);
+
+   Vector ml(ndofs);
+   Me_tilde.GetRowSums(ml);
+
+   SparseMatrix ML(ml);
+   ML.Finalize();
+   ML *= -1.0;
+   SparseMatrix MC_ML = Me_tilde;
+   MC_ML += ML;
+
+   Vector collumnsums(ndofs);
+   Vector ones(ndofs);
+   ones = 1.0;
+
+   Ke.MultTranspose(ones, collumnsums);
+
+   auto I = Me_tilde.GetI();
+   auto J = Me_tilde.GetJ();
+   
+   GMRESSolver gmres;
+   gmres.SetAbsTol(1e-30);
+   gmres.SetMaxIter(100);
+   gmres.SetOperator(MC_ML);
+
+   Vector v(ndofs);
+   gmres.Mult(collumnsums, v);
+
+   double coeff = - v.Sum() / double(ndofs);
+
+   v.Add(coeff, ones);
+
+   //if(abs(v_d.Sum()) > 1e-14)
+   //{
+   //   cout << "v sum = " << v_d.Sum() << endl;
+   //}
+
+   for(int i = 0; i < ndofs; i++)
+   {
+      for(int k = I[i]; k < I[i+1]; k++)
+      {
+         int j = J[k];
+         double kij = Me_tilde(i,j) * v(i);
+         if(i == j) 
+         {
+            kij -= ml(i) * v(i); 
+         }
+         Ke_tilde.Set(i, j, kij);
+      }
+   }
+   
+   Ke_tilde.Finalize(0);
+
+   /*
+   Ce_tilde.AddMultTranspose(ones, collumnsums, -1.0);
+
+
+
+   if(collumnsums.Norml2() > 1e-14)
+   {
+      cout << "collumnsums = " << collumnsums.Norml2() << endl;
+   }
+   //*/
+}
+
+void Subcell_FE_Evolution::BuildSubcellMasstMatrix(const int e, SparseMatrix &Me_tilde) const
+{
+   Me_tilde = 0.0;
+   Array<int> dofs, subcell_el;
+   fes.GetElementDofs(e, dofs);
+   Me_tilde.OverrideSize(dofs.Size(), dofs.Size());
+   coarse_to_fine.GetRow(e, subcell_el);
+    
+   for(int el = 0; el < subcell_el.Size(); el++)
+   {
+      int es = subcell_el[el];
+      auto element = subcell_fes->GetFE(es);
+      auto eltrans = subcell_fes->GetElementTransformation(es);
+
+       
+      // assemble mass matrix on subcell
+      mass_int.AssembleElementMatrix(*element, *eltrans, Kse);
+      Array<int> subcell_dofs = *dofs2subcelldofs[el];
+       
+      Me_tilde.AddSubMatrix(subcell_dofs, subcell_dofs, Kse, 0);
+       
+   }
+   Me_tilde.Finalize(0);
+    
+}
+
+
 void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &Ke_tilde) const
 {  
    Ke_tilde = 0.0;
