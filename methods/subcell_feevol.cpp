@@ -204,6 +204,112 @@ void Subcell_FE_Evolution::BuildSubcellDivElementMatrix(const int e, SparseMatri
    Ce_tilde.Finalize(0);
 }
 
+void Subcell_FE_Evolution::BuildSubcellDivElementMatrix2(const int e, const DenseMatrix &Ce, SparseMatrix &Ce_tilde) const
+{
+   const int dim = fes.GetMesh()->Dimension();
+   const int ndofs = Ce.Height();
+   SparseMatrix Me_tilde(ndofs, ndofs);
+   BuildSubcellMasstMatrix(e, Me_tilde);
+
+   Ce_tilde.OverrideSize(ndofs, dim * ndofs);
+
+   Vector ml(ndofs);
+   Me_tilde.GetRowSums(ml);
+
+   SparseMatrix ML(ml);
+   ML.Finalize();
+   ML *= -1.0;
+   SparseMatrix MC_ML = Me_tilde;
+   MC_ML += ML;
+
+   Vector collumnsums(Ce.Width());
+   Vector ones(ndofs);
+   ones = 1.0;
+
+   Ce.MultTranspose(ones, collumnsums);
+
+   Vector cs_d(ndofs);
+
+   auto I = Me_tilde.GetI();
+   auto J = Me_tilde.GetJ();
+   
+   GMRESSolver gmres;
+   gmres.SetAbsTol(1e-30);
+   gmres.SetMaxIter(100);
+   gmres.SetOperator(MC_ML);
+
+   Vector v_d(ndofs);
+
+   for(int d = 0; d < dim; d++)
+   {
+      cs_d.SetData(collumnsums.GetData() + d * ndofs);
+
+      gmres.Mult(cs_d, v_d);
+
+      double coeff = - v_d.Sum() / double(ndofs);
+
+      v_d.Add(coeff, ones);
+
+      //if(abs(v_d.Sum()) > 1e-14)
+      //{
+      //   cout << "v sum = " << v_d.Sum() << endl;
+      //}
+
+      for(int i = 0; i < ndofs; i++)
+      {
+         for(int k = I[i]; k < I[i+1]; k++)
+         {
+            int j = J[k];
+            double cij_d = Me_tilde(i,j) * v_d(i);
+            if(i == j) 
+            {
+               cij_d -= ml(i) * v_d(i); 
+            }
+
+            Ce_tilde.Set(i, j + d * ndofs, cij_d);
+         }
+      }
+   }
+   Ce_tilde.Finalize(0);
+
+   /*
+   Ce_tilde.AddMultTranspose(ones, collumnsums, -1.0);
+
+
+
+   if(collumnsums.Norml2() > 1e-14)
+   {
+      cout << "collumnsums = " << collumnsums.Norml2() << endl;
+   }
+   //*/
+}
+
+void Subcell_FE_Evolution::BuildSubcellMasstMatrix(const int e, SparseMatrix &Me_tilde) const
+{
+   Me_tilde = 0.0;
+   Array<int> dofs, subcell_el;
+   fes.GetElementDofs(e, dofs);
+   Me_tilde.OverrideSize(dofs.Size(), dofs.Size());
+   coarse_to_fine.GetRow(e, subcell_el);
+    
+   for(int el = 0; el < subcell_el.Size(); el++)
+   {
+      int es = subcell_el[el];
+      auto element = subcell_fes->GetFE(es);
+      auto eltrans = subcell_fes->GetElementTransformation(es);
+
+       
+      // assemble mass matrix on subcell
+      mass_int.AssembleElementMatrix(*element, *eltrans, Kse);
+      Array<int> subcell_dofs = *dofs2subcelldofs[el];
+       
+      Me_tilde.AddSubMatrix(subcell_dofs, subcell_dofs, Kse, 0);
+       
+   }
+   Me_tilde.Finalize(0);
+    
+}
+
 void Subcell_FE_Evolution::BuildSubcellElementMatrix(const int e, SparseMatrix &Ke_tilde) const
 {  
    Ke_tilde = 0.0;
