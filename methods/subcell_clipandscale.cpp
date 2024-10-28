@@ -105,7 +105,8 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
             if( j >= i){continue;}
             double kije_tilde = KK[k];
             double kjie_tilde = Ke_tilde(j,i);
-            double dije_tilde = max(max(kije_tilde, kjie_tilde), 0.0);
+            // double dije_tilde = max(max(kije_tilde, kjie_tilde), 0.0);
+            double dije_tilde = max(abs(kije_tilde), abs(kjie_tilde));
             double diffusion = dije_tilde * (ue(j) - ue(i));
 
             re(i) += diffusion;
@@ -145,6 +146,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       // add convective term
       Ke_tilde.AddMult(ue, re, -1.0);
 
+      //*
       gammae *= 2.0;
 
       double P_plus = 0.0;
@@ -179,8 +181,8 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
          }
       }
       // add limited antidiffusive fluxes to element contribution and add to global vector
-      //re += fe_star;
-     
+      re += fe_star;
+      //*/
       y.AddElementVector(dofs, re);
    }
    //MFEM_ABORT("alles ok")
