@@ -73,6 +73,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       conv->AssembleElementMatrix(*element, *eltrans, Ke);
       div_int.AssembleElementMatrix2(*element, *element, *eltrans, Ce);
       SparseMatrix Ce_tilde(dofs.Size(), dim * dofs.Size());
+      //BuildSubcellDivElementMatrix(e, Ce_tilde);
       BuildSubcellDivElementMatrix2(e, Ce, Ce_tilde);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
        
@@ -165,20 +166,12 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
             fe(i) += Me(i,j) * (udote(i) - udote(j))+ ( (cij_tilde * vj) - (cij * vj) ) * ue(j) - (cji * vj) * ue(j);
 
          }
-      }  
+      } 
+
+      /*
       //conv->AssembleElementMatrix(*element, *eltrans, Ke);
       Ke.AddMultTranspose(ue, fe);
 
-      /*
-      if (abs(fe.Sum()) > 1e-15)
-      {
-         cout << fe.Sum() << endl;
-      }
-      else
-      {
-         cout << "ok" << endl;
-      }
-      //*/ 
 
       gammae *= 2.0;
 
@@ -216,6 +209,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       }
       // add limited antidiffusive fluxes to element contribution and add to global vector
       re += fe_star;     
+      //*/
       y.AddElementVector(dofs, re);
    }
 
