@@ -35,6 +35,7 @@ public:
 
    virtual void BuildSubcellElementMatrix(const int e, SparseMatrix &Ke_tilde) const;
    virtual void BuildSubcellDivElementMatrix(const int e, SparseMatrix &Ce_tilde) const;
+   virtual void AdjustSubcellElementMatrix(const DenseMatrix &Ce, SparseMatrix &Ce_tilde) const;
 
    virtual ~Subcell_FE_Evolution();
 };

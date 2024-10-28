@@ -74,6 +74,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
       div_int.AssembleElementMatrix2(*element, *element, *eltrans, Ce);
       SparseMatrix Ce_tilde(dofs.Size(), dim * dofs.Size());
       BuildSubcellDivElementMatrix(e, Ce_tilde);
+      AdjustSubcellElementMatrix(Ce, Ce_tilde);
       mass_int.AssembleElementMatrix(*element, *eltrans, Me);
        
       ue.SetSize(dofs.Size());

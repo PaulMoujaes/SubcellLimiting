@@ -100,6 +100,76 @@ void Subcell_FE_Evolution::ComputeHOTimeDerivatives(const Vector &u,
    udot /= lumpedmassmatrix;
 }
 
+void Subcell_FE_Evolution::AdjustSubcellElementMatrix(const DenseMatrix &Ce, SparseMatrix &Ce_tilde) const
+{
+   //DenseMatrix C;
+   //Ce_tilde.ToDenseMatrix(K);
+   //DenseMatrix Kt = K;
+   //Kt = 0.0;
+   const int dim = fes.GetMesh()->Dimension();
+   const int ndofs = Ce.Height();
+
+   SparseMatrix ce_start = Ce_tilde;
+   ce_start *= 1.0;
+
+   auto I = Ce_tilde.GetI();
+   auto J = Ce_tilde.GetJ();
+   auto CC = Ce_tilde.ReadWriteData();
+
+   Vector ones(ndofs);
+   ones = 1.0;
+   Vector collumnsums(ndofs), alpha(ndofs);
+
+   GMRESSolver bcg;
+   bcg.SetAbsTol(1e-30);
+   //bcg.SetPrintLevel(1);
+   bcg.SetMaxIter(100);
+
+   Vector aux(Ce.Width());
+   Ce.MultTranspose(ones, aux);
+    
+
+   for(int d = 0; d < dim; d++)
+   {  
+      collumnsums.SetData(aux.GetData() + d * ndofs);
+      SparseMatrix C_kt(ndofs, ndofs);
+       
+      for(int i = 0; i < ndofs; i++)
+      {
+          
+         for(int k = I[i]; k < I[i+1]; k++)
+         {
+            int j = J[k];
+            if(j >= ndofs) {continue;}
+
+            double cij_k = Ce_tilde(i, j + d * ndofs); 
+            C_kt.Set(j,i,cij_k);
+            //collumnsums(j) += cij_k;
+             
+         }
+      }
+       
+      C_kt.Finalize(0);
+       
+      bcg.SetOperator(C_kt);
+      bcg.Mult(collumnsums, alpha);
+
+      //alpha.Print();
+      //cout << endl;
+       
+      for(int i = 0; i < ndofs; i++)
+      {
+          
+         for(int k = I[i]; k < I[i+1]; k++)
+         {
+            int j = J[k];
+            if(j >= ndofs) {continue;}
+            Ce_tilde(i, j + d * ndofs) *= alpha(i);
+         }
+      }
+   }
+}
+
 void Subcell_FE_Evolution::BuildSubcellDivElementMatrix(const int e, SparseMatrix &Ce_tilde) const
 {
    int dim = fes.GetMesh()->Dimension();
