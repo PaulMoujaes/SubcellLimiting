@@ -127,6 +127,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
             double cij_max = max(abs(cij_tilde * vj), abs(cij_tilde * vi));
             double cji_max = max(abs(cji_tilde * vj), abs(cji_tilde * vi));
             double dije_tilde = max(max(cij_tilde * vj, cji_tilde * vi), 0.0);
+            dije_tilde = max(cij_max, cji_max);
             double diffusion = dije_tilde * (ue(j) - ue(i));
 
             re(i) += diffusion;
@@ -168,7 +169,7 @@ void Subcell_ClipAndScale::Mult(const Vector &x, Vector &y) const
          }
       } 
 
-      /*
+      //*
       //conv->AssembleElementMatrix(*element, *eltrans, Ke);
       Ke.AddMultTranspose(ue, fe);
 
