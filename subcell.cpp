@@ -392,10 +392,20 @@ int main(int argc, char *argv[])
     MPI_Allreduce(&loc_mass, &glob_end_mass, 1, MPI_DOUBLE, MPI_SUM,
               MPI_COMM_WORLD);
 
+    Array <double> errors(3);
+    errors[0] = u.ComputeL1Error(u0);
+    errors[1] = u.ComputeL2Error(u0);
+    errors[2] = u.ComputeMaxError(u0);
+
     if(Mpi::Root())
     {
         cout << "Time stepping loop done in " << tic_toc.RealTime() << " seconds."<< endl;
         cout << endl;
+
+        cout << "L1 error:                           " << errors[0] << '\n';
+        cout << "L2 error:                           " << errors[1] << '\n';
+        cout << "Linf error                          " << errors[2] << "\n\n";
+
         cout << "Difference in solution mass: " << abs(glob_init_mass - glob_end_mass) << endl;
         cout << "u in [" << min_glob<< ", " << max_glob<< "]\n\n"; 
     }

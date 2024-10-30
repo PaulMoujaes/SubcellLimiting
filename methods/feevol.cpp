@@ -72,6 +72,7 @@ void FE_Evolution::ComputeLOTimeDerivatives(const Vector &u,
          {
             // add low-order stabilization with discrete upwinding
             double dije = max(max(Ke(i,j), Ke(j,i)), 0.0);
+            //dije = max(abs(Ke(i,j)), abs(Ke(j,i)));
             double diffusion = dije * (ue(j) - ue(i));
 
             re(i) += diffusion;
